@@ -1,0 +1,26 @@
+name: 'Relato de Erro / Bug no Backend Worker'
+description: Relate problemas em rotas HTTP, falhas de banco de dados, webhooks ou jobs de cron.
+title: '[API BUG]: '
+labels: ['bug', 'backend']
+body:
+  - type: markdown
+    attributes:
+      value: Relate problemas funcionais ou comportamentos anômalos na API Worker.
+  - type: input
+    id: endpoint
+    attributes:
+      label: Rota / Endpoint ou Job Afetado
+      placeholder: ex: POST /api/triage ou POST /api/webhooks/asaas
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Descrição do Problema
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Mensagens de Erro (REDAJA DADOS SENSÍVEIS!)
+      description: Certifique-se de mascarar qualquer dado pessoal antes de colar.

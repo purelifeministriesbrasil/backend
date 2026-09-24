@@ -1,0 +1,27 @@
+name: 'Proposta de Novo Endpoint ou Caso de Uso'
+description: Sugira novas funcionalidades no Worker ou extensões de persistência.
+title: '[API FEATURE]: '
+labels: ['enhancement', 'backend']
+body:
+  - type: markdown
+    attributes:
+      value: Descreva o caso de uso ou rota a ser implementada na Clean Architecture.
+  - type: input
+    id: feature_name
+    attributes:
+      label: Título do Caso de Uso
+      placeholder: ex: Inscrição em Concorrência para Eventos
+    validations:
+      required: true
+  - type: textarea
+    id: domain_rules
+    attributes:
+      label: Regras de Domínio e Invariantes
+    validations:
+      required: true
+  - type: textarea
+    id: security_considerations
+    attributes:
+      label: Considerações de Segurança e LGPD
+    validations:
+      required: true
