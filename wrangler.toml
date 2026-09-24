@@ -1,0 +1,16 @@
+name = "purelife-api"
+main = "src/index.ts"
+compatibility_date = "2026-09-19"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+PUBLIC_SITE_ORIGIN = "https://purelifebrasil.org"
+ENVIRONMENT = "production"
+
+# Secrets required in production via `wrangler secret put`:
+# DATABASE_URL
+# TRIAGE_KEY_V1
+# TURNSTILE_SECRET_KEY
+# RESEND_API_KEY
+# ASAAS_API_KEY
+# ASAAS_WEBHOOK_SECRET

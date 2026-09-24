@@ -1,0 +1,38 @@
+name: CI — purelife-api
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    name: Test, Lint and Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout backend
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 12
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Run unit and AppSec tests
+        run: pnpm test
+
+      - name: Verify Clean Architecture boundaries
+        run: pnpm lint
+
+      - name: Typecheck and build
+        run: pnpm build
