@@ -4,7 +4,9 @@ O repositório `purelife-api` gerencia as transações críticas, armazenamento 
 
 ---
 
-## 📋 Regras Estritas de Arquitetura
+## Diretrizes e Checklist
+
+Regras Estritas de Arquitetura
 
 1. **Clean Architecture e Regra de Dependência**:
    - `domain/`: **Zero dependências externas**. Não importe Drizzle, bibliotecas de terceiros, runtime da Cloudflare ou HTTP.
@@ -21,7 +23,9 @@ O repositório `purelife-api` gerencia as transações críticas, armazenamento 
 
 ---
 
-## 🛠️ Validação Local Obrigatória
+## Validação Local
+
+Validação Local Obrigatória
 
 Antes de abrir um Pull Request:
 ```bash
@@ -37,7 +41,9 @@ pnpm run build
 
 ---
 
-## 🔀 Fluxo de Branches e Commits
+## Fluxo de Trabalho Git
+
+Fluxo de Branches e Commits
 
 - Nomeie branches descritivamente: `feat/webhook-retry-policy` ou `fix/triage-aad-binding`.
 - Use mensagens Conventional Commits:

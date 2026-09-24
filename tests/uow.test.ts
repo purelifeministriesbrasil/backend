@@ -80,4 +80,78 @@ describe("Triage Unit of Work Atomic Transactions (§5.4)", () => {
       "commit_transaction",
     ]);
   });
+
+  it("aborts and bubbles error if any step in the transaction fails (rollback guarantee)", async () => {
+    const fixedId = "test-fail-uuid-5678";
+    const operations: string[] = [];
+
+    const failingTx = {
+      insert: vi.fn((table: any) => ({
+        values: vi.fn((_values: any) => {
+          if (table === triageSubmissions) {
+            operations.push("insert_submission");
+            return {
+              returning: vi.fn(async () => [{ id: fixedId }]),
+            };
+          }
+          if (table === triageConsents) {
+            operations.push("insert_consent_fail");
+            throw new Error("DB Connection Interrupted during consent recording");
+          }
+          return Promise.resolve();
+        }),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => {
+          operations.push("update_ciphertexts");
+          return {
+            where: vi.fn(async () => {}),
+          };
+        }),
+      })),
+    };
+
+    const mockDb = {
+      transaction: vi.fn(async (callback: any) => {
+        operations.push("begin_transaction");
+        try {
+          const res = await callback(failingTx);
+          operations.push("commit_transaction");
+          return res;
+        } catch (err) {
+          operations.push("rollback_transaction");
+          throw err;
+        }
+      }),
+    };
+
+    const uow = createTriageUnitOfWork(mockDb as any, enc);
+
+    await expect(
+      uow.createSubmissionWithConsent({
+        referenceCode: "PLM-FAIL-01",
+        triage: {
+          programInterest: "online",
+          contactChannel: "email",
+          contactPlaintext: JSON.stringify({ fullName: "Falha", email: "falha@exemplo.com" }),
+          reportPlaintext: "Relato",
+          retentionUntil: new Date(),
+        },
+        consent: {
+          purpose: "avaliacao_e_contato_para_aconselhamento",
+          policyVersion: "2026-09-19",
+          originRoute: "/triagem/",
+          grantedAt: new Date(),
+        },
+      })
+    ).rejects.toThrow("DB Connection Interrupted during consent recording");
+
+    expect(operations).toEqual([
+      "begin_transaction",
+      "insert_submission",
+      "update_ciphertexts",
+      "insert_consent_fail",
+      "rollback_transaction",
+    ]);
+  });
 });

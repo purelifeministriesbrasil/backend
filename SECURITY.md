@@ -1,6 +1,6 @@
 # Política de Segurança e Conformidade LGPD — purelife-api
 
-## 🔒 Relato de Vulnerabilidades
+## Segurança: Relato de Vulnerabilidades
 
 Dada a extrema confidencialidade dos dados tratados por esta API (relatos pastorais sensíveis e transações financeiras), qualquer potencial vulnerabilidade deve ser reportada com máxima urgência e absoluto sigilo.
 
@@ -12,7 +12,9 @@ Envie seu relatório diretamente para:
 
 ---
 
-## 🛡️ Políticas Mandatórias de Proteção de Dados
+## Governança e Contribuição
+
+Políticas Mandatórias de Proteção de Dados
 
 1. **Proteção Rigorosa de PII e Dados de Fé/Cura**:
    - Dados de aconselhamento pastoral recebem tratamento análogo a segredo médico/pastoral sob a LGPD (Lei 13.709/2018).

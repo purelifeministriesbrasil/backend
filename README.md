@@ -12,7 +12,7 @@ Backend oficial do ministério **Pure Life Ministries Brasil** (`purelifebrasil.
 
 ---
 
-## 🏛️ Arquitetura em Camadas (Clean Architecture)
+## Arquitetura: Arquitetura em Camadas (Clean Architecture)
 
 A base de código segue rigorosamente o princípio da inversão de dependência. O script `pnpm run verify:boundaries` audita as fronteiras arquiteturais a cada compilação:
 
@@ -34,7 +34,7 @@ src/
     └── index.ts             # Entrypoint do Cloudflare Worker
 ```
 
-### 🔒 Garantias de Segurança e Criptografia
+### Segurança: Garantias de Segurança e Criptografia
 1. **AES-256-GCM com AAD Rígido (ADR-004)**: Dados sensíveis de triagem pastoral (relato pessoal, telefone, e-mail) são cifrados individualmente em repouso. O ID da submissão é vinculado como *Additional Authenticated Data (AAD)* para impedir ataques de realocação criptográfica de blocos (*ciphertext swapping*).
 2. **Lease Atômico para Webhooks (ADR-005)**: O processamento de notificações de pagamento Asaas opera sob um modelo de concessão atômica (`lease`) com expiração de 30 segundos, eliminando *race conditions* de requisições simultâneas.
 3. **Expurgo Automatizado LGPD**: Executado periodicamente via Cloudflare Cron Triggers, purgando dados expirados e sobrescrevendo campos com sentinela criptográfica de expurgo verificado (`CHECK (triage_purged_clean)`).
@@ -42,7 +42,9 @@ src/
 
 ---
 
-## 🚀 Instalação e Desenvolvimento
+## Instalação e Execução
+
+Instalação e Desenvolvimento
 
 ```bash
 # Instalar dependências
@@ -60,7 +62,9 @@ pnpm run dev
 
 ---
 
-## 🛡️ Governança e Contribuição
+## Governança e Contribuição
+
+Governança e Contribuição
 
 - [Código de Conduta](CODE_OF_CONDUCT.md)
 - [Guia de Contribuição](CONTRIBUTING.md)

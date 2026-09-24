@@ -56,4 +56,48 @@ describe("Triage Cryptographic Purge (§5.5)", () => {
     expect(purged.programInterest).toBeNull();
     expect(purged.purgedAt).toBeInstanceOf(Date);
   });
+
+  it("handles empty queue cleanly when no submissions have expired", async () => {
+    const mockRepo = {
+      findExpiredSubmissions: vi.fn(async () => []),
+      purgeSubmission: vi.fn(),
+    };
+
+    const purgeUseCase = createPurgeTriageUseCase(mockRepo);
+    const result = await purgeUseCase({
+      asOfDate: new Date(),
+      reason: "rotina_diaria_limpeza",
+      policyVersion: "2026-09-19",
+    });
+
+    expect(result.purgedCount).toBe(0);
+    expect(result.submissionIds).toEqual([]);
+    expect(mockRepo.findExpiredSubmissions).toHaveBeenCalledTimes(1);
+    expect(mockRepo.purgeSubmission).not.toHaveBeenCalled();
+  });
+
+  it("correctly purges multiple expired records in sequence", async () => {
+    const expiredIds = ["expired-id-1", "expired-id-2", "expired-id-3"];
+    const purgedIds: string[] = [];
+
+    const mockRepo = {
+      findExpiredSubmissions: vi.fn(async () => expiredIds),
+      purgeSubmission: vi.fn(async (id: string) => {
+        purgedIds.push(id);
+        return true;
+      }),
+    };
+
+    const purgeUseCase = createPurgeTriageUseCase(mockRepo);
+    const result = await purgeUseCase({
+      asOfDate: new Date(),
+      reason: "retencao_180_dias_expirada",
+      policyVersion: "2026-09-19",
+    });
+
+    expect(result.purgedCount).toBe(3);
+    expect(result.submissionIds).toEqual(expiredIds);
+    expect(purgedIds).toEqual(expiredIds);
+    expect(mockRepo.purgeSubmission).toHaveBeenCalledTimes(3);
+  });
 });
