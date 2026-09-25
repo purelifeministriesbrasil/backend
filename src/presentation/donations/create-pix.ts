@@ -3,10 +3,16 @@ import { guardRequest, assertBodySize } from "../../infrastructure/security/requ
 import { createPixCharge } from "../../application/usecases/create-pix-charge.js";
 import type { PaymentGateway } from "../../application/ports/payment-gateway.js";
 
+export interface TurnstileDeps {
+  turnstileSecret: string;
+  verifyTurnstile: (token: string, secret: string, ip?: string) => Promise<boolean>;
+}
+
 export async function handleCreatePix(
   request: Request,
   env: { PUBLIC_SITE_ORIGIN: string },
-  gateway: PaymentGateway
+  gateway: PaymentGateway,
+  turnstile: TurnstileDeps
 ): Promise<Response> {
   const guard = guardRequest(request, env.PUBLIC_SITE_ORIGIN, {
     maxBytes: 4096,
@@ -43,6 +49,20 @@ export async function handleCreatePix(
         status: 422,
         headers: { "Content-Type": "application/json" },
       }
+    );
+  }
+
+  // Validate Turnstile token (§7.3)
+  const clientIp = request.headers.get("CF-Connecting-IP") ?? undefined;
+  const turnstileValid = await turnstile.verifyTurnstile(
+    parsed.data.turnstileToken,
+    turnstile.turnstileSecret,
+    clientIp
+  );
+  if (!turnstileValid) {
+    return new Response(
+      JSON.stringify({ error: "turnstile_failed", message: "Verificação de segurança falhou. Tente novamente." }),
+      { status: 403, headers: { "Content-Type": "application/json" } }
     );
   }
 

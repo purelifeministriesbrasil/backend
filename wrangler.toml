@@ -14,3 +14,6 @@ ENVIRONMENT = "production"
 # RESEND_API_KEY
 # ASAAS_API_KEY
 # ASAAS_WEBHOOK_SECRET
+
+[triggers]
+crons = ["0 3 * * *"]

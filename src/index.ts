@@ -8,7 +8,9 @@ import { createAesGcmProvider } from "./infrastructure/crypto/aes-gcm.js";
 import { createTriageUnitOfWork } from "./infrastructure/db/unit-of-work.js";
 import { createAsaasGateway } from "./infrastructure/payments/asaas.js";
 import { createIdempotencyRepository } from "./infrastructure/db/idempotency.js";
-
+import { createNeonDb } from "./infrastructure/db/neon.js";
+import { createDrizzlePurgeRepository } from "./infrastructure/db/purge-repository.js";
+import { verifyTurnstileToken } from "./infrastructure/security/turnstile.js";
 import { handleScheduledPurge } from "./presentation/cron/purge.js";
 
 export interface Env {
@@ -18,6 +20,8 @@ export interface Env {
   TRIAGE_KEY_V1?: string;
   ASAAS_API_KEY?: string;
   ASAAS_WEBHOOK_SECRET?: string;
+  TURNSTILE_SECRET_KEY?: string;
+  RESEND_API_KEY?: string;
 }
 
 export default {
@@ -30,33 +34,35 @@ export default {
     }
 
     if (path === "/api/forms/triagem") {
-      // Cria provider de criptografia com chave de segredo injetada
-      const dummyKey = env.TRIAGE_KEY_V1 || "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-      const cryptoProvider = createAesGcmProvider({ 1: dummyKey }, 1);
+      const turnstileSecret = env.TURNSTILE_SECRET_KEY ?? "";
+      const cryptoProvider = createAesGcmProvider(
+        { 1: env.TRIAGE_KEY_V1 ?? "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" },
+        1
+      );
 
-      // Mock de transação para ambiente sem conexão direta com Neon
-      const dbMock = {
-        transaction: async (cb: any) =>
-          cb({
-            insert: () => ({
-              values: () => ({
-                returning: async () => [{ id: crypto.randomUUID() }],
-              }),
-            }),
-            update: () => ({
-              set: () => ({
-                where: async () => {},
-              }),
-            }),
-          }),
-      };
+      if (!env.DATABASE_URL) {
+        return new Response(JSON.stringify({ error: "service_unavailable", message: "Database not configured." }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
-      const uow = createTriageUnitOfWork(dbMock as any, cryptoProvider);
-      return handleTriageSubmission(request, env, uow);
+      const db = createNeonDb(env.DATABASE_URL);
+      const uow = createTriageUnitOfWork(db as any, cryptoProvider);
+
+      // Validate Turnstile before processing (§7.3)
+      // We extract token from body for validation — done inside handler
+      return handleTriageSubmission(request, env, uow, {
+        turnstileSecret,
+        verifyTurnstile: verifyTurnstileToken,
+      });
     }
 
     if (path === "/api/forms/contato") {
-      return handleContactSubmission(request, env);
+      return handleContactSubmission(request, env, {
+        turnstileSecret: env.TURNSTILE_SECRET_KEY ?? "",
+        verifyTurnstile: verifyTurnstileToken,
+      });
     }
 
     if (path === "/api/forms/newsletter") {
@@ -65,28 +71,35 @@ export default {
 
     if (path === "/api/donations/create-pix") {
       const gateway = createAsaasGateway(
-        env.ASAAS_API_KEY || "mock-api-key",
-        env.ASAAS_WEBHOOK_SECRET || "mock-secret"
+        env.ASAAS_API_KEY ?? "mock-api-key",
+        env.ASAAS_WEBHOOK_SECRET ?? "mock-secret"
       );
-      return handleCreatePix(request, env, gateway);
+      return handleCreatePix(request, env, gateway, {
+        turnstileSecret: env.TURNSTILE_SECRET_KEY ?? "",
+        verifyTurnstile: verifyTurnstileToken,
+      });
     }
 
     if (path === "/api/webhooks/payment") {
       const gateway = createAsaasGateway(
-        env.ASAAS_API_KEY || "mock-api-key",
-        env.ASAAS_WEBHOOK_SECRET || "mock-secret"
+        env.ASAAS_API_KEY ?? "mock-api-key",
+        env.ASAAS_WEBHOOK_SECRET ?? "mock-secret"
       );
-      const idempotency = createIdempotencyRepository({
-        execute: async () => ({ rows: [{ attempts: 1, was_insert: true }] }),
-        update: () => ({ set: () => ({ where: async () => {} }) }),
-        select: () => ({ from: () => ({ where: async () => [] }) }),
-      });
+
+      if (!env.DATABASE_URL) {
+        return new Response(JSON.stringify({ error: "service_unavailable" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const db = createNeonDb(env.DATABASE_URL);
+      const idempotency = createIdempotencyRepository(db);
       const chargeRepo = {
-        findByProviderChargeId: async () => ({
-          id: crypto.randomUUID(),
-          status: "pending" as const,
-          amountCents: 5000,
-        }),
+        findByProviderChargeId: async (_providerChargeId: string) => {
+          // TODO: implement real charge lookup when paymentCharges table is needed
+          return null as any;
+        },
         updateStatus: async () => {},
         recordAudit: async () => {},
       };
@@ -105,12 +118,10 @@ export default {
     });
   },
 
-  async scheduled(event: any, env: Env, ctx: any): Promise<void> {
-    const purgeRepo = {
-      findExpiredSubmissions: async () => [],
-      purgeSubmission: async () => true,
-    };
+  async scheduled(_event: any, env: Env, ctx: any): Promise<void> {
+    if (!env.DATABASE_URL) return;
+    const db = createNeonDb(env.DATABASE_URL);
+    const purgeRepo = createDrizzlePurgeRepository(db);
     ctx.waitUntil(handleScheduledPurge(purgeRepo));
   },
 };
-

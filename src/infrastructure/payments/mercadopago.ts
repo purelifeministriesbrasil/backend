@@ -39,6 +39,73 @@ export function createMercadoPagoGateway(accessToken: string, webhookSecret: str
       rawBody: string;
       headers: Headers;
     }): Promise<UseCaseResult<VerifiedPaymentEvent, "invalid_signature" | "malformed_payload">> {
+      // Mercado Pago webhook signature validation using HMAC-SHA256 (§8.3)
+      // Header: x-signature contains ts=<timestamp>,v1=<hmac>
+      const xSignature = headers.get("x-signature");
+      const xRequestId = headers.get("x-request-id");
+
+      if (webhookSecret && xSignature) {
+        const parts = Object.fromEntries(
+          xSignature.split(",").map((p) => p.split("=") as [string, string])
+        );
+        const ts = parts["ts"];
+        const v1 = parts["v1"];
+
+        if (!ts || !v1) {
+          return {
+            ok: false,
+            kind: "expected",
+            error: "invalid_signature",
+            message: "Assinatura do Mercado Pago ausente ou malformada.",
+          };
+        }
+
+        // Reconstruct signed template: id:{id};request-id:{requestId};ts:{ts};
+        let dataId: string | undefined;
+        try {
+          const payload = JSON.parse(rawBody);
+          dataId = payload.data?.id ? String(payload.data.id) : undefined;
+        } catch {
+          // will fail later in parse
+        }
+
+        const template = `id:${dataId ?? ""};request-id:${xRequestId ?? ""};ts:${ts};`;
+
+        const encoder = new TextEncoder();
+        const keyData = encoder.encode(webhookSecret);
+        const messageData = encoder.encode(template);
+
+        const cryptoKey = await crypto.subtle.importKey(
+          "raw",
+          keyData,
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"]
+        );
+
+        const signature = await crypto.subtle.sign("HMAC", cryptoKey, messageData);
+        const expectedHex = Array.from(new Uint8Array(signature))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+
+        if (v1 !== expectedHex) {
+          return {
+            ok: false,
+            kind: "expected",
+            error: "invalid_signature",
+            message: "Assinatura HMAC do Mercado Pago inválida.",
+          };
+        }
+      } else if (webhookSecret && !xSignature) {
+        // Signature required but not present
+        return {
+          ok: false,
+          kind: "expected",
+          error: "invalid_signature",
+          message: "Header x-signature ausente no webhook do Mercado Pago.",
+        };
+      }
+
       try {
         const payload = JSON.parse(rawBody);
         return {
