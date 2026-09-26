@@ -1,0 +1,13 @@
+# ==============================================================================
+# Pure Life Ministries Brasil — Cloudflare Workers Local Secrets (Template)
+# ==============================================================================
+# Renomeie para .dev.vars para uso com 'wrangler dev'
+
+PUBLIC_SITE_ORIGIN=http://localhost:4321
+ENVIRONMENT=development
+DATABASE_URL=postgresql://postgres.exemplo:[SENHA]@aws-0-sa-east-1.pooler.supabase.com:5432/postgres
+TRIAGE_KEY_V1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+ASAAS_API_KEY=$aact_exemplo_sandbox_token...
+ASAAS_WEBHOOK_SECRET=segredo_webhook_configurado_no_asaas
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+RESEND_API_KEY=re_exemplo_123456789
