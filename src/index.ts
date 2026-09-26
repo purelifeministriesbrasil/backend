@@ -8,7 +8,7 @@ import { createAesGcmProvider } from "./infrastructure/crypto/aes-gcm.js";
 import { createTriageUnitOfWork } from "./infrastructure/db/unit-of-work.js";
 import { createAsaasGateway } from "./infrastructure/payments/asaas.js";
 import { createIdempotencyRepository } from "./infrastructure/db/idempotency.js";
-import { createNeonDb } from "./infrastructure/db/neon.js";
+import { createDbClient } from "./infrastructure/db/db.js";
 import { createDrizzlePurgeRepository } from "./infrastructure/db/purge-repository.js";
 import { verifyTurnstileToken } from "./infrastructure/security/turnstile.js";
 import { handleScheduledPurge } from "./presentation/cron/purge.js";
@@ -47,7 +47,7 @@ export default {
         });
       }
 
-      const db = createNeonDb(env.DATABASE_URL);
+      const db = createDbClient(env.DATABASE_URL);
       const uow = createTriageUnitOfWork(db as any, cryptoProvider);
 
       // Validate Turnstile before processing (§7.3)
@@ -93,7 +93,7 @@ export default {
         });
       }
 
-      const db = createNeonDb(env.DATABASE_URL);
+      const db = createDbClient(env.DATABASE_URL);
       const idempotency = createIdempotencyRepository(db);
       const chargeRepo = {
         findByProviderChargeId: async (_providerChargeId: string) => {
@@ -120,7 +120,7 @@ export default {
 
   async scheduled(_event: any, env: Env, ctx: any): Promise<void> {
     if (!env.DATABASE_URL) return;
-    const db = createNeonDb(env.DATABASE_URL);
+    const db = createDbClient(env.DATABASE_URL);
     const purgeRepo = createDrizzlePurgeRepository(db);
     ctx.waitUntil(handleScheduledPurge(purgeRepo));
   },
