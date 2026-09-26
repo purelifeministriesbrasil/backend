@@ -1,4 +1,4 @@
-import { triageSubmissionSchema } from "purelife-contracts";
+import { triageSubmissionSchema } from "../../schemas/index.js";
 import { guardRequest, assertBodySize } from "../../infrastructure/security/request-guards.js";
 import { submitTriage } from "../../application/usecases/submit-triage.js";
 import type { TriageUnitOfWork } from "../../application/ports/triage-unit-of-work.js";

@@ -1,4 +1,4 @@
-import type { TriageSubmission } from "purelife-contracts";
+import type { TriageSubmission } from "../../schemas/index.js";
 import type { TriageUnitOfWork } from "../ports/triage-unit-of-work.js";
 import type { UseCaseResult } from "../ports/result.js";
 

@@ -1,4 +1,4 @@
-import { newsletterSchema } from "purelife-contracts";
+import { newsletterSchema } from "../../schemas/index.js";
 import { assertBodySize } from "../../infrastructure/security/request-guards.js";
 
 export async function handleNewsletterSubscription(

@@ -1,4 +1,4 @@
-import { contactSubmissionSchema } from "purelife-contracts";
+import { contactSubmissionSchema } from "../../schemas/index.js";
 import { guardRequest, assertBodySize } from "../../infrastructure/security/request-guards.js";
 
 export interface TurnstileDeps {

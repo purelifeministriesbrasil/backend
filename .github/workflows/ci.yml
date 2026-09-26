@@ -11,16 +11,8 @@ jobs:
     name: Test, Lint and Typecheck
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout backend
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          path: backend
-
-      - name: Checkout contracts
-        uses: actions/checkout@v4
-        with:
-          repository: purelifeministriesbrasil/contracts
-          path: contracts
 
       - name: Install pnpm
         uses: pnpm/action-setup@v3
@@ -31,29 +23,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: "pnpm"
 
-      - name: Build shared contracts
-        run: |
-          cd contracts
-          pnpm install --no-frozen-lockfile
-          pnpm build
-
-      - name: Install backend dependencies
-        run: |
-          cd backend
-          pnpm install --no-frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
 
       - name: Run unit and AppSec tests
-        run: |
-          cd backend
-          pnpm test
+        run: pnpm test
 
       - name: Verify Clean Architecture boundaries
-        run: |
-          cd backend
-          pnpm lint
+        run: pnpm lint
 
       - name: Typecheck and build
-        run: |
-          cd backend
-          pnpm build
+        run: pnpm build

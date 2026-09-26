@@ -12,7 +12,6 @@
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
     "drizzle-orm": "^0.39.3",
-    "purelife-contracts": "link:../contracts",
     "resend": "^4.1.2",
     "zod": "^3.23.8"
   },

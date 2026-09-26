@@ -14,9 +14,6 @@ importers:
       drizzle-orm:
         specifier: ^0.39.3
         version: 0.39.3(@cloudflare/workers-types@4.20260702.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)
-      purelife-contracts:
-        specifier: link:../contracts
-        version: link:../contracts
       resend:
         specifier: ^4.1.2
         version: 4.8.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

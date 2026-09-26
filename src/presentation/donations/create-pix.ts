@@ -1,4 +1,4 @@
-import { createPixSchema } from "purelife-contracts";
+import { createPixSchema } from "../../schemas/index.js";
 import { guardRequest, assertBodySize } from "../../infrastructure/security/request-guards.js";
 import { createPixCharge } from "../../application/usecases/create-pix-charge.js";
 import type { PaymentGateway } from "../../application/ports/payment-gateway.js";

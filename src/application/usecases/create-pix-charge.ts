@@ -1,4 +1,4 @@
-import type { CreatePixInput } from "purelife-contracts";
+import type { CreatePixInput } from "../../schemas/index.js";
 import type { PaymentGateway, CreatePixResult } from "../ports/payment-gateway.js";
 import type { UseCaseResult } from "../ports/result.js";
 
