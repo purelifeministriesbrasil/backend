@@ -1,3 +1,6 @@
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { handleHealth } from "./presentation/health.js";
 import { handleTriageSubmission } from "./presentation/forms/triagem.js";
 import { handleContactSubmission } from "./presentation/forms/contato.js";
@@ -24,98 +27,115 @@ export interface Env {
   RESEND_API_KEY?: string;
 }
 
+export const app = new Hono<{ Bindings: Env }>();
+
+// Security headers middleware
+app.use("*", secureHeaders());
+
+// Scoped CORS middleware
+app.use("/api/*", async (c, next) => {
+  const allowedOrigin = c.env?.PUBLIC_SITE_ORIGIN ?? "https://purelifebrasil.org";
+  const corsMiddleware = cors({
+    origin: (origin) => {
+      if (!origin) return allowedOrigin;
+      if (origin === allowedOrigin) return origin;
+      if (c.env?.ENVIRONMENT !== "production") {
+        if (origin.startsWith("http://localhost:") || origin.endsWith(".vercel.app")) {
+          return origin;
+        }
+      }
+      return null;
+    },
+    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Accept", "CF-Connecting-IP"],
+    maxAge: 86400,
+  });
+  return corsMiddleware(c, next);
+});
+
+app.get("/health", async () => {
+  return handleHealth();
+});
+
+app.post("/api/forms/triagem", async (c) => {
+  const env = c.env;
+  const turnstileSecret = env.TURNSTILE_SECRET_KEY ?? "";
+  const cryptoProvider = createAesGcmProvider(
+    { 1: env.TRIAGE_KEY_V1 ?? "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" },
+    1
+  );
+
+  if (!env.DATABASE_URL) {
+    return c.json({ error: "service_unavailable", message: "Database not configured." }, 503);
+  }
+
+  const db = createDbClient(env.DATABASE_URL);
+  const uow = createTriageUnitOfWork(db as any, cryptoProvider);
+
+  return handleTriageSubmission(c.req.raw, env, uow, {
+    turnstileSecret,
+    verifyTurnstile: verifyTurnstileToken,
+  });
+});
+
+app.post("/api/forms/contato", async (c) => {
+  const env = c.env;
+  return handleContactSubmission(c.req.raw, env, {
+    turnstileSecret: env.TURNSTILE_SECRET_KEY ?? "",
+    verifyTurnstile: verifyTurnstileToken,
+  });
+});
+
+app.post("/api/forms/newsletter", async (c) => {
+  return handleNewsletterSubscription(c.req.raw, c.env);
+});
+
+app.post("/api/donations/create-pix", async (c) => {
+  const env = c.env;
+  const gateway = createAsaasGateway(
+    env.ASAAS_API_KEY ?? "mock-api-key",
+    env.ASAAS_WEBHOOK_SECRET ?? "mock-secret"
+  );
+  return handleCreatePix(c.req.raw, env, gateway, {
+    turnstileSecret: env.TURNSTILE_SECRET_KEY ?? "",
+    verifyTurnstile: verifyTurnstileToken,
+  });
+});
+
+app.post("/api/webhooks/payment", async (c) => {
+  const env = c.env;
+  const gateway = createAsaasGateway(
+    env.ASAAS_API_KEY ?? "mock-api-key",
+    env.ASAAS_WEBHOOK_SECRET ?? "mock-secret"
+  );
+
+  if (!env.DATABASE_URL) {
+    return c.json({ error: "service_unavailable" }, 503);
+  }
+
+  const db = createDbClient(env.DATABASE_URL);
+  const idempotency = createIdempotencyRepository(db);
+  const chargeRepo = {
+    findByProviderChargeId: async (_providerChargeId: string) => null as any,
+    updateStatus: async () => {},
+    recordAudit: async () => {},
+  };
+
+  return handlePaymentWebhook(c.req.raw, {
+    gateway,
+    idempotency,
+    chargeRepo,
+    clock: { now: () => new Date() },
+  });
+});
+
+app.notFound((c) => {
+  return c.json({ error: "not_found" }, 404);
+});
+
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    if (request.method === "GET" && path === "/health") {
-      return handleHealth();
-    }
-
-    if (path === "/api/forms/triagem") {
-      const turnstileSecret = env.TURNSTILE_SECRET_KEY ?? "";
-      const cryptoProvider = createAesGcmProvider(
-        { 1: env.TRIAGE_KEY_V1 ?? "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" },
-        1
-      );
-
-      if (!env.DATABASE_URL) {
-        return new Response(JSON.stringify({ error: "service_unavailable", message: "Database not configured." }), {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      const db = createDbClient(env.DATABASE_URL);
-      const uow = createTriageUnitOfWork(db as any, cryptoProvider);
-
-      // Validate Turnstile before processing (§7.3)
-      // We extract token from body for validation — done inside handler
-      return handleTriageSubmission(request, env, uow, {
-        turnstileSecret,
-        verifyTurnstile: verifyTurnstileToken,
-      });
-    }
-
-    if (path === "/api/forms/contato") {
-      return handleContactSubmission(request, env, {
-        turnstileSecret: env.TURNSTILE_SECRET_KEY ?? "",
-        verifyTurnstile: verifyTurnstileToken,
-      });
-    }
-
-    if (path === "/api/forms/newsletter") {
-      return handleNewsletterSubscription(request, env);
-    }
-
-    if (path === "/api/donations/create-pix") {
-      const gateway = createAsaasGateway(
-        env.ASAAS_API_KEY ?? "mock-api-key",
-        env.ASAAS_WEBHOOK_SECRET ?? "mock-secret"
-      );
-      return handleCreatePix(request, env, gateway, {
-        turnstileSecret: env.TURNSTILE_SECRET_KEY ?? "",
-        verifyTurnstile: verifyTurnstileToken,
-      });
-    }
-
-    if (path === "/api/webhooks/payment") {
-      const gateway = createAsaasGateway(
-        env.ASAAS_API_KEY ?? "mock-api-key",
-        env.ASAAS_WEBHOOK_SECRET ?? "mock-secret"
-      );
-
-      if (!env.DATABASE_URL) {
-        return new Response(JSON.stringify({ error: "service_unavailable" }), {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      const db = createDbClient(env.DATABASE_URL);
-      const idempotency = createIdempotencyRepository(db);
-      const chargeRepo = {
-        findByProviderChargeId: async (_providerChargeId: string) => {
-          // TODO: implement real charge lookup when paymentCharges table is needed
-          return null as any;
-        },
-        updateStatus: async () => {},
-        recordAudit: async () => {},
-      };
-
-      return handlePaymentWebhook(request, {
-        gateway,
-        idempotency,
-        chargeRepo,
-        clock: { now: () => new Date() },
-      });
-    }
-
-    return new Response(JSON.stringify({ error: "not_found" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
+  fetch(request: Request, env: Env, ctx: any): Response | Promise<Response> {
+    return app.fetch(request, env, ctx);
   },
 
   async scheduled(_event: any, env: Env, ctx: any): Promise<void> {

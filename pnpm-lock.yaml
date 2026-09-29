@@ -8,12 +8,15 @@ importers:
 
   .:
     dependencies:
-      '@neondatabase/serverless':
-        specifier: ^0.10.4
-        version: 0.10.4
       drizzle-orm:
         specifier: ^0.39.3
-        version: 0.39.3(@cloudflare/workers-types@4.20260702.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)
+        version: 0.39.3(@cloudflare/workers-types@4.20260702.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(postgres@3.4.9)
+      hono:
+        specifier: ^4.13.10
+        version: 4.13.10
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
       resend:
         specifier: ^4.1.2
         version: 4.8.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -1464,6 +1467,10 @@ packages:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
 
+  hono@4.13.10:
+    resolution: {integrity: sha512-dQuLsa5oO+47QVMVMaaD9cIv8ctmVtK1iRvwWngkfloFJMeFeuoUFDswIqZGxmGX3hrRzREgEArjkK9OgsQEhA==}
+    engines: {node: '>=16.9.0'}
+
   html-to-text@9.0.5:
     resolution: {integrity: sha512-qY60FjREgVZL03vJU6IfMV4GDjGBIoOyvuFdpBDIX9yTlDw0TjxVBQp+P8NvpdIXNJvfWBTNul7fsAQJq2FNpg==}
     engines: {node: '>=14'}
@@ -1661,6 +1668,10 @@ packages:
 
   postgres-range@1.1.4:
     resolution: {integrity: sha512-i/hbxIE9803Alj/6ytL7UHQxRvZkI9O4Sy+J3HGc4F4oo/2eQAjTSNJ0bfxyse3bH0nuVesCk+3IRLaMtG3H6w==}
+
+  postgres@3.4.9:
+    resolution: {integrity: sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw==}
+    engines: {node: '>=12'}
 
   prelude-ls@1.2.1:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
@@ -2463,6 +2474,7 @@ snapshots:
   '@neondatabase/serverless@0.10.4':
     dependencies:
       '@types/pg': 8.11.6
+    optional: true
 
   '@petamoriken/float16@3.9.3': {}
 
@@ -2568,12 +2580,14 @@ snapshots:
   '@types/node@26.6.2':
     dependencies:
       undici-types: 8.9.0
+    optional: true
 
   '@types/pg@8.11.6':
     dependencies:
       '@types/node': 26.6.2
       pg-protocol: 1.16.0
       pg-types: 4.1.0
+    optional: true
 
   '@vitest/expect@3.2.7':
     dependencies:
@@ -2751,11 +2765,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  drizzle-orm@0.39.3(@cloudflare/workers-types@4.20260702.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6):
+  drizzle-orm@0.39.3(@cloudflare/workers-types@4.20260702.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(postgres@3.4.9):
     optionalDependencies:
       '@cloudflare/workers-types': 4.20260702.1
       '@neondatabase/serverless': 0.10.4
       '@types/pg': 8.11.6
+      postgres: 3.4.9
 
   entities@4.5.0: {}
 
@@ -3016,6 +3031,8 @@ snapshots:
 
   has-flag@4.0.0: {}
 
+  hono@4.13.10: {}
+
   html-to-text@9.0.5:
     dependencies:
       '@selderee/plugin-htmlparser2': 0.11.0
@@ -3123,7 +3140,8 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  obuf@1.1.2: {}
+  obuf@1.1.2:
+    optional: true
 
   ohash@2.0.12: {}
 
@@ -3165,11 +3183,14 @@ snapshots:
 
   peberminta@0.9.0: {}
 
-  pg-int8@1.0.1: {}
+  pg-int8@1.0.1:
+    optional: true
 
-  pg-numeric@1.0.2: {}
+  pg-numeric@1.0.2:
+    optional: true
 
-  pg-protocol@1.16.0: {}
+  pg-protocol@1.16.0:
+    optional: true
 
   pg-types@4.1.0:
     dependencies:
@@ -3180,6 +3201,7 @@ snapshots:
       postgres-date: 2.1.0
       postgres-interval: 3.0.0
       postgres-range: 1.1.4
+    optional: true
 
   picocolors@1.1.1: {}
 
@@ -3191,17 +3213,24 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  postgres-array@3.0.4: {}
+  postgres-array@3.0.4:
+    optional: true
 
   postgres-bytea@3.0.0:
     dependencies:
       obuf: 1.1.2
+    optional: true
 
-  postgres-date@2.1.0: {}
+  postgres-date@2.1.0:
+    optional: true
 
-  postgres-interval@3.0.0: {}
+  postgres-interval@3.0.0:
+    optional: true
 
-  postgres-range@1.1.4: {}
+  postgres-range@1.1.4:
+    optional: true
+
+  postgres@3.4.9: {}
 
   prelude-ls@1.2.1: {}
 
@@ -3387,7 +3416,8 @@ snapshots:
 
   ufo@1.6.4: {}
 
-  undici-types@8.9.0: {}
+  undici-types@8.9.0:
+    optional: true
 
   undici@5.29.0:
     dependencies:

@@ -5,7 +5,7 @@ import { triageSubmissions } from "./schema.js";
 
 export function createDrizzlePurgeRepository(db: any): PurgeRepository {
   return {
-    async findExpiredSubmissions(asOfDate: Date): Promise<string[]> {
+    async findExpiredSubmissions(asOfDate: Date, limit: number = 500): Promise<string[]> {
       const rows = await db
         .select({ id: triageSubmissions.id })
         .from(triageSubmissions)
@@ -14,7 +14,8 @@ export function createDrizzlePurgeRepository(db: any): PurgeRepository {
             lt(triageSubmissions.retentionUntil, asOfDate),
             ne(triageSubmissions.status, "purged")
           )
-        );
+        )
+        .limit(limit);
 
       return rows.map((r: any) => r.id);
     },

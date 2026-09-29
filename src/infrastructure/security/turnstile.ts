@@ -1,3 +1,5 @@
+import type { BotProtectionPort } from "../../application/ports/bot-protection.js";
+
 /**
  * Valida um token Cloudflare Turnstile contra a API siteverify.
  * Retorna true se o token for válido, false caso contrário.
@@ -13,7 +15,6 @@ export async function verifyTurnstileToken(
     token === "cf-turnstile-dummy-token" ||
     token === "cf-dummy-token" ||
     token === "dummy-turnstile-token" ||
-    token === "cf-turnstile-dummy-token" ||
     token.startsWith("cf-valid-")
   ) {
     // Em produção, secretKey real sempre começa com '1x' ou '2x'
@@ -33,12 +34,26 @@ export async function verifyTurnstileToken(
   try {
     const res = await fetch(
       "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-      { method: "POST", body: formData }
+      {
+        method: "POST",
+        body: formData,
+        signal: AbortSignal.timeout(3000),
+      }
     );
     if (!res.ok) return false;
-    const data = await res.json() as { success: boolean };
+    const data = (await res.json()) as { success: boolean };
     return data.success === true;
   } catch {
     return false;
   }
 }
+
+/**
+ * Adaptador que implementa BotProtectionPort utilizando Cloudflare Turnstile.
+ */
+export function createTurnstileAdapter(): BotProtectionPort {
+  return {
+    verify: verifyTurnstileToken,
+  };
+}
+

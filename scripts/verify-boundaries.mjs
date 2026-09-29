@@ -27,6 +27,8 @@ let violations = [];
 const FORBIDDEN_IN_DOMAINS = [
   "drizzle-orm",
   "@neondatabase/serverless",
+  "postgres",
+  "hono",
   "resend",
   "cloudflare:",
   "../application",
@@ -37,6 +39,8 @@ const FORBIDDEN_IN_DOMAINS = [
 const FORBIDDEN_IN_APPLICATION = [
   "drizzle-orm",
   "@neondatabase/serverless",
+  "postgres",
+  "hono",
   "resend",
   "cloudflare:",
   "../infrastructure",
@@ -46,6 +50,7 @@ const FORBIDDEN_IN_APPLICATION = [
 const FORBIDDEN_IN_PRESENTATION = [
   "../infrastructure/db",
   "@neondatabase/serverless",
+  "postgres",
 ];
 
 for (const file of files) {

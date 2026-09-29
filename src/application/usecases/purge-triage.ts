@@ -2,7 +2,7 @@
 // Caso de uso para expurgo criptográfico automatizado (Nível 3 de retenção)
 
 export interface PurgeRepository {
-  findExpiredSubmissions(asOfDate: Date): Promise<string[]>;
+  findExpiredSubmissions(asOfDate: Date, limit?: number): Promise<string[]>;
   purgeSubmission(id: string, params: {
     purgedAt: Date;
     purgeReason: string;
@@ -14,6 +14,7 @@ export interface PurgeTriageInput {
   asOfDate?: Date;
   reason?: string;
   policyVersion?: string;
+  limit?: number;
 }
 
 export interface PurgeTriageOutput {
@@ -26,8 +27,9 @@ export function createPurgeTriageUseCase(repo: PurgeRepository) {
     const asOfDate = input.asOfDate ?? new Date();
     const purgeReason = input.reason ?? "retencao_expirada_180_dias";
     const purgePolicyVersion = input.policyVersion ?? "2026-09-19";
+    const limit = input.limit ?? 500;
 
-    const expiredIds = await repo.findExpiredSubmissions(asOfDate);
+    const expiredIds = await repo.findExpiredSubmissions(asOfDate, limit);
     const purgedIds: string[] = [];
 
     for (const id of expiredIds) {
