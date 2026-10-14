@@ -1,109 +1,89 @@
+// Verifica as fronteiras da Clean Architecture (§2.1) resolvendo o caminho REAL de cada import.
+// A versão anterior comparava o texto literal ("../infrastructure") e deixava passar
+// imports com profundidade diferente, como "../../infrastructure/db/schema.js".
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
-
-function getAllTsFiles(dir) {
-  let results = [];
-  const list = readdirSync(dir);
-  for (const file of list) {
-    const fullPath = join(dir, file);
-    const stat = statSync(fullPath);
-    if (stat.isDirectory()) {
-      results = results.concat(getAllTsFiles(fullPath));
-    } else if (file.endsWith(".ts")) {
-      results.push(fullPath);
-    }
-  }
-  return results;
-}
+import { dirname, join, relative, resolve, sep } from "node:path";
 
 const rootDir = process.cwd();
 const srcDir = join(rootDir, "src");
-const files = getAllTsFiles(srcDir);
 
+function getAllTsFiles(dir) {
+  return readdirSync(dir).flatMap((name) => {
+    const fullPath = join(dir, name);
+    if (statSync(fullPath).isDirectory()) return getAllTsFiles(fullPath);
+    return name.endsWith(".ts") ? [fullPath] : [];
+  });
+}
+
+/** Camada de um arquivo em src/: "domains", "application", "infrastructure", "presentation", "schemas" ou "root". */
+function layerOf(absPath) {
+  const rel = relative(srcDir, absPath).split(sep);
+  return rel.length > 1 ? rel[0] : "root";
+}
+
+// Pacotes proibidos por camada (imports não relativos).
+const FORBIDDEN_PACKAGES = {
+  domains: [/^drizzle-orm/, /^postgres$/, /^hono/, /^resend$/, /^@neondatabase\//, /^cloudflare:/],
+  application: [/^drizzle-orm/, /^postgres$/, /^hono/, /^resend$/, /^@neondatabase\//, /^cloudflare:/],
+  presentation: [/^postgres$/, /^drizzle-orm/, /^@neondatabase\//],
+  schemas: [/^(?!zod$).+/],
+};
+
+// Camadas de destino proibidas para imports relativos.
+const FORBIDDEN_LAYERS = {
+  domains: ["application", "infrastructure", "presentation", "root"],
+  application: ["infrastructure", "presentation", "root"],
+  schemas: ["domains", "application", "infrastructure", "presentation", "root"],
+  infrastructure: ["presentation", "root"],
+};
+
+// Subpastas de infraestrutura proibidas na apresentação (acesso a dados só via composição em src/index.ts).
+const FORBIDDEN_INFRA_IN_PRESENTATION = ["db"];
+
+const IMPORT_RE = /(?:^|\n)\s*(?:import|export)\s[^'"]*?from\s*["']([^"']+)["']|(?:^|\n)\s*import\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
+
+const files = getAllTsFiles(srcDir);
 console.log(`[verify-boundaries] Checking ${files.length} TypeScript files for Clean Architecture boundaries...`);
 
-let violations = [];
-
-const FORBIDDEN_IN_DOMAINS = [
-  "drizzle-orm",
-  "@neondatabase/serverless",
-  "postgres",
-  "hono",
-  "resend",
-  "cloudflare:",
-  "../application",
-  "../infrastructure",
-  "../presentation",
-];
-
-const FORBIDDEN_IN_APPLICATION = [
-  "drizzle-orm",
-  "@neondatabase/serverless",
-  "postgres",
-  "hono",
-  "resend",
-  "cloudflare:",
-  "../infrastructure",
-  "../presentation",
-];
-
-const FORBIDDEN_IN_PRESENTATION = [
-  "../infrastructure/db",
-  "@neondatabase/serverless",
-  "postgres",
-];
+const violations = [];
 
 for (const file of files) {
   const relPath = relative(rootDir, file).replace(/\\/g, "/");
   const content = readFileSync(file, "utf-8");
+  const layer = layerOf(file);
 
-  // Rule: Prohibit process.env in Worker environment
-  if (content.includes("process.env")) {
-    violations.push({
-      file: relPath,
-      rule: "No process.env in Worker runtime. Must receive env from fetch handler (§2.2).",
-    });
+  if (/\bprocess\.env\b/.test(content)) {
+    violations.push({ file: relPath, rule: "No process.env in Worker runtime. Must receive env from fetch handler (§2.2)." });
   }
 
-  // Rule: Check layer import constraints
-  const importLines = content
-    .split("\n")
-    .filter((line) => line.trim().startsWith("import ") || line.trim().startsWith("export * from"));
+  for (const match of content.matchAll(IMPORT_RE)) {
+    const specifier = match[1] ?? match[2] ?? match[3];
+    if (!specifier) continue;
 
-  for (const line of importLines) {
-    if (relPath.startsWith("src/domains/")) {
-      for (const forbidden of FORBIDDEN_IN_DOMAINS) {
-        if (line.includes(`"${forbidden}`) || line.includes(`'${forbidden}`)) {
-          violations.push({
-            file: relPath,
-            rule: `Domain layer cannot import '${forbidden}' (§2.1)`,
-            line: line.trim(),
-          });
+    if (!specifier.startsWith(".")) {
+      for (const pattern of FORBIDDEN_PACKAGES[layer] ?? []) {
+        if (pattern.test(specifier)) {
+          violations.push({ file: relPath, rule: `Layer '${layer}' cannot import package '${specifier}' (§2.1)` });
         }
       }
+      continue;
     }
 
-    if (relPath.startsWith("src/application/")) {
-      for (const forbidden of FORBIDDEN_IN_APPLICATION) {
-        if (line.includes(`"${forbidden}`) || line.includes(`'${forbidden}`)) {
-          violations.push({
-            file: relPath,
-            rule: `Application layer cannot import '${forbidden}' (§2.1)`,
-            line: line.trim(),
-          });
-        }
-      }
+    const target = resolve(dirname(file), specifier);
+    if (!target.startsWith(srcDir + sep)) {
+      violations.push({ file: relPath, rule: `Import escapes src/: '${specifier}'` });
+      continue;
+    }
+    const targetLayer = layerOf(target);
+
+    if ((FORBIDDEN_LAYERS[layer] ?? []).includes(targetLayer)) {
+      violations.push({ file: relPath, rule: `Layer '${layer}' cannot import from '${targetLayer}' ('${specifier}') (§2.1)` });
     }
 
-    if (relPath.startsWith("src/presentation/")) {
-      for (const forbidden of FORBIDDEN_IN_PRESENTATION) {
-        if (line.includes(`"${forbidden}`) || line.includes(`'${forbidden}`)) {
-          violations.push({
-            file: relPath,
-            rule: `Presentation layer cannot import '${forbidden}' directly (§2.1)`,
-            line: line.trim(),
-          });
-        }
+    if (layer === "presentation" && targetLayer === "infrastructure") {
+      const sub = relative(join(srcDir, "infrastructure"), target).split(sep)[0];
+      if (FORBIDDEN_INFRA_IN_PRESENTATION.includes(sub)) {
+        violations.push({ file: relPath, rule: `Presentation layer cannot import infrastructure/${sub} directly ('${specifier}') (§2.1)` });
       }
     }
   }
@@ -111,11 +91,8 @@ for (const file of files) {
 
 if (violations.length > 0) {
   console.error(`\n[verify-boundaries] ❌ Found ${violations.length} boundary violation(s):`);
-  for (const v of violations) {
-    console.error(` - [${v.file}] ${v.rule}${v.line ? ` -> "${v.line}"` : ""}`);
-  }
+  for (const v of violations) console.error(` - [${v.file}] ${v.rule}`);
   process.exit(1);
-} else {
-  console.log(`[verify-boundaries] ✅ All ${files.length} files strictly follow Clean Architecture boundaries (§2.1 & §2.2).`);
-  process.exit(0);
 }
+
+console.log(`[verify-boundaries] ✅ All ${files.length} files strictly follow Clean Architecture boundaries (§2.1 & §2.2).`);
