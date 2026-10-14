@@ -1,57 +1,48 @@
 import { eq } from "drizzle-orm";
 import type { TriageUnitOfWork } from "../../application/ports/triage-unit-of-work.js";
 import type { EncryptionProvider } from "../../application/ports/encryption-provider.js";
+import type { Database } from "./db.js";
 import { triageSubmissions, triageConsents } from "./schema.js";
 
 // Helper para calcular o primeiro dia do mês (§5.3 - createdMonth)
-function startOfMonth(date: Date): string {
+export function startOfMonth(date: Date): string {
   const y = date.getUTCFullYear();
   const m = String(date.getUTCMonth() + 1).padStart(2, "0");
   return `${y}-${m}-01`;
 }
 
-// Database Transaction Interface compatível com Drizzle
-export interface DbTransaction {
-  insert: (table: any) => {
-    values: (data: any) => {
-      returning: (fields: any) => Promise<any[]>;
-    } & Promise<any>;
-  };
-  update: (table: any) => {
-    set: (data: any) => {
-      where: (clause: any) => Promise<any>;
-    };
-  };
-}
-
-export interface DbClient {
-  transaction: <T>(callback: (tx: DbTransaction) => Promise<T>) => Promise<T>;
-}
-
 export function createTriageUnitOfWork(
-  db: DbClient,
+  db: Pick<Database, "transaction">,
   enc: EncryptionProvider
 ): TriageUnitOfWork {
   return {
-    async createSubmissionWithConsent({ triage, consent, referenceCode }) {
+    async createSubmissionWithConsent({ triage, consent, referenceCode, idempotencyKey }) {
       return db.transaction(async (tx) => {
-        // 1. Insere registro preliminar na transação para obter o UUID real do AAD
+        // 1. Insere registro preliminar para obter o UUID real usado no AAD.
+        //    ON CONFLICT na idempotency_key: retentativa devolve o código já emitido.
         const [row] = await tx
           .insert(triageSubmissions)
           .values({
             referenceCode,
+            idempotencyKey,
             programInterest: triage.programInterest,
             contactChannel: triage.contactChannel,
             createdMonth: startOfMonth(consent.grantedAt),
             retentionUntil: triage.retentionUntil,
           })
+          .onConflictDoNothing({ target: triageSubmissions.idempotencyKey })
           .returning({ id: triageSubmissions.id });
 
-        if (!row || !row.id) {
-          throw new Error("triage_insert_failed_no_id");
+        if (!row) {
+          const [existing] = await tx
+            .select({ id: triageSubmissions.id, referenceCode: triageSubmissions.referenceCode })
+            .from(triageSubmissions)
+            .where(eq(triageSubmissions.idempotencyKey, idempotencyKey));
+          if (!existing?.referenceCode) throw new Error("triage_idempotency_unresolved");
+          return { submissionId: existing.id, referenceCode: existing.referenceCode, created: false };
         }
 
-        // 2. Cifra de campo vinculada rigidamente à entidade, campo e versão da chave via AAD (§5.2)
+        // 2. Cifra de campo vinculada à entidade, campo e versão da chave via AAD (§5.2)
         const contactEncrypted = await enc.encrypt(triage.contactPlaintext, {
           entityType: "triage_submission",
           entityId: row.id,
@@ -66,7 +57,6 @@ export function createTriageUnitOfWork(
             })
           : null;
 
-        // Atualiza campos cifrados dentro da mesma transação
         await tx
           .update(triageSubmissions)
           .set({
@@ -78,7 +68,7 @@ export function createTriageUnitOfWork(
           })
           .where(eq(triageSubmissions.id, row.id));
 
-        // 3. Grava consentimento com chave estrangeira real na MESMA transação atômica (§5.4)
+        // 3. Consentimento com chave estrangeira real na MESMA transação atômica (§5.4)
         await tx.insert(triageConsents).values({
           triageSubmissionId: row.id,
           purpose: consent.purpose,
@@ -87,7 +77,7 @@ export function createTriageUnitOfWork(
           originRoute: consent.originRoute,
         });
 
-        return { submissionId: row.id };
+        return { submissionId: row.id, referenceCode, created: true };
       });
     },
   };

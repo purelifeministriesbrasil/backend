@@ -4,7 +4,6 @@ export function handleHealth(): Response {
       status: "healthy",
       service: "purelife-api",
       timestamp: new Date().toISOString(),
-      version: "5.0.0",
     }),
     {
       status: 200,
