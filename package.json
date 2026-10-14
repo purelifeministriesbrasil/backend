@@ -4,30 +4,29 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "build": "tsc",
+    "deploy": "wrangler deploy",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "lint": "node ./scripts/verify-boundaries.mjs",
-    "verify:boundaries": "node ./scripts/verify-boundaries.mjs"
+    "lint": "eslint src && node ./scripts/verify-boundaries.mjs",
+    "verify:boundaries": "node ./scripts/verify-boundaries.mjs",
+    "db:migrate": "node ./scripts/migrate.mjs",
+    "db:migrate:dry-run": "node ./scripts/migrate.mjs --dry-run",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test"
   },
   "dependencies": {
     "drizzle-orm": "^0.39.3",
     "hono": "^4.13.10",
     "postgres": "^3.4.9",
-    "resend": "^4.1.2",
-    "zod": "^3.23.8"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250224.0",
     "drizzle-kit": "^0.30.5",
     "eslint": "^9.21.0",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.71.2",
     "vitest": "^3.0.7",
     "wrangler": "^3.111.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "workerd",
-      "esbuild"
-    ]
   }
 }

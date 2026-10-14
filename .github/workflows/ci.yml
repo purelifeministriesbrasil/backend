@@ -6,16 +6,37 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   verify:
-    name: Test, Lint and Typecheck
+    name: Lint, Boundaries, Typecheck, Tests and DB integration
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: 12
 
@@ -28,11 +49,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run unit and AppSec tests
-        run: pnpm test
-
-      - name: Verify Clean Architecture boundaries
+      - name: Lint (ESLint + Clean Architecture boundaries)
         run: pnpm lint
 
-      - name: Typecheck and build
-        run: pnpm build
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Emulate Supabase roles (anon/authenticated)
+        run: psql "$DATABASE_URL" -c "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN;"
+
+      - name: Apply migrations (drizzle/ is the single source of truth)
+        run: pnpm db:migrate
+
+      - name: Verify anon cannot read sensitive tables
+        run: |
+          if psql "$DATABASE_URL" -c "SET ROLE anon; SELECT 1 FROM triage_submissions LIMIT 1;" 2>/dev/null; then
+            echo "anon conseguiu ler triage_submissions"; exit 1
+          fi
+
+      - name: Unit, AppSec and DB integration tests
+        run: pnpm test
+
+      - name: Bundle check (wrangler dry-run)
+        run: pnpm exec wrangler deploy --dry-run --outdir dist

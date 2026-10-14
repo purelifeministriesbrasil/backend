@@ -16,10 +16,12 @@ export interface ConsentDraft {
 export interface TriageUnitOfWork {
   /**
    * Insere submissão + consentimento + cifra (que depende do id real da entidade) numa transação única.
+   * Idempotente por `idempotencyKey`: uma retentativa devolve o código já emitido com `created: false`.
    */
   createSubmissionWithConsent(input: {
     triage: TriageDraft;
     consent: ConsentDraft;
     referenceCode: string;
-  }): Promise<{ submissionId: string }>;
+    idempotencyKey: string;
+  }): Promise<{ submissionId: string; referenceCode: string; created: boolean }>;
 }

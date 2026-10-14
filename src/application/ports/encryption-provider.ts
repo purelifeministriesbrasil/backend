@@ -6,7 +6,7 @@ export interface EncryptedPayload {
 }
 
 export interface EncryptionContext {
-  entityType: "triage_submission" | "contact_submission" | "donation_intent" | "newsletter";
+  entityType: "triage_submission" | "contact_submission" | "donation_intent" | "newsletter_subscription";
   entityId: string;
   field: "contact" | "report" | "message" | "email";
   keyVersion: number;

@@ -1,9 +1,14 @@
-export default [
+import tseslint from "typescript-eslint";
+
+const LAYER_IMPORT_BAN = ["drizzle-orm*", "postgres", "@neondatabase/*", "resend", "hono*", "cloudflare:*"];
+
+export default tseslint.config(
   {
-    ignores: ["dist/**", "node_modules/**", "drizzle/**"],
+    ignores: ["dist/**", "node_modules/**", "drizzle/**", ".wrangler/**", "scripts/**", "tests/**"],
   },
   {
     files: ["src/**/*.ts"],
+    extends: [tseslint.configs.recommended],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -15,7 +20,13 @@ export default [
           selector: "MemberExpression[object.name='process'][property.name='env']",
           message: "Proibido ler process.env diretamente. Use o objeto env injetado pelo Worker (§2.2).",
         },
+        {
+          selector: "CallExpression[callee.object.name='Math'][callee.property.name='random']",
+          message: "Use crypto.getRandomValues/randomUUID: identificadores precisam de CSPRNG.",
+        },
       ],
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
   },
   {
@@ -26,7 +37,7 @@ export default [
         {
           patterns: [
             {
-              group: ["drizzle-orm*", "@neondatabase/*", "resend", "cloudflare:*"],
+              group: [...LAYER_IMPORT_BAN, "**/application/**", "**/infrastructure/**", "**/presentation/**"],
               message: "Camada domains/ só pode importar TypeScript puro e Zod (§2.1).",
             },
           ],
@@ -42,12 +53,12 @@ export default [
         {
           patterns: [
             {
-              group: ["drizzle-orm*", "@neondatabase/*", "resend", "cloudflare:*"],
-              message: "Camada application/ nunca importa Drizzle, SDKs de base de dados ou ambiente (§2.1).",
+              group: [...LAYER_IMPORT_BAN, "**/infrastructure/**", "**/presentation/**"],
+              message: "Camada application/ nunca importa Drizzle, SDKs, ambiente ou infraestrutura (§2.1).",
             },
           ],
         },
       ],
     },
-  },
-];
+  }
+);

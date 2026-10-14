@@ -1,84 +1,55 @@
 import { createPixSchema } from "../../schemas/index.js";
-import { guardRequest, assertBodySize } from "../../infrastructure/security/request-guards.js";
-import { createPixCharge } from "../../application/usecases/create-pix-charge.js";
-import type { PaymentGateway } from "../../application/ports/payment-gateway.js";
+import { guardRequest, readIdempotencyKey } from "../../infrastructure/security/request-guards.js";
+import { createPixCharge, type CreatePixDeps } from "../../application/usecases/create-pix-charge.js";
+import {
+  clientIp,
+  internalError,
+  json,
+  missingIdempotencyKey,
+  readJson,
+  turnstileFailed,
+  validationFailed,
+  type TurnstileVerifier,
+} from "../http.js";
 
-export interface TurnstileDeps {
-  turnstileSecret: string;
-  verifyTurnstile: (token: string, secret: string, ip?: string) => Promise<boolean>;
-}
+const MAX_BYTES = 4096;
 
 export async function handleCreatePix(
   request: Request,
   env: { PUBLIC_SITE_ORIGIN: string },
-  gateway: PaymentGateway,
-  turnstile: TurnstileDeps
+  deps: { turnstile: TurnstileVerifier; donations: () => CreatePixDeps }
 ): Promise<Response> {
-  const guard = guardRequest(request, env.PUBLIC_SITE_ORIGIN, {
-    maxBytes: 4096,
-    accept: ["application/json"],
-  });
+  const guard = guardRequest(request, env.PUBLIC_SITE_ORIGIN, { maxBytes: MAX_BYTES, accept: ["application/json"] });
   if (guard) return guard;
 
-  const raw = await request.text();
-  if (!assertBodySize(raw, 4096)) {
-    return new Response(JSON.stringify({ error: "payload_too_large" }), {
-      status: 413,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const idempotencyKey = readIdempotencyKey(request);
+  if (!idempotencyKey) return missingIdempotencyKey();
 
-  let body: unknown;
-  try {
-    body = JSON.parse(raw);
-  } catch {
-    return new Response(JSON.stringify({ error: "invalid_json" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const read = await readJson(request, MAX_BYTES);
+  if (read instanceof Response) return read;
 
-  const parsed = createPixSchema.safeParse(body);
-  if (!parsed.success) {
-    return new Response(
-      JSON.stringify({
-        error: "validation_failed",
-        details: parsed.error.format(),
-      }),
-      {
-        status: 422,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  }
+  const parsed = createPixSchema.safeParse(read.body);
+  if (!parsed.success) return validationFailed(parsed.error);
 
-  // Validate Turnstile token (§7.3)
-  const clientIp = request.headers.get("CF-Connecting-IP") ?? undefined;
-  const turnstileValid = await turnstile.verifyTurnstile(
-    parsed.data.turnstileToken,
-    turnstile.turnstileSecret,
-    clientIp
-  );
-  if (!turnstileValid) {
-    return new Response(
-      JSON.stringify({ error: "turnstile_failed", message: "Verificação de segurança falhou. Tente novamente." }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
-    );
-  }
+  if (!(await deps.turnstile.verify(parsed.data.turnstileToken, clientIp(request)))) return turnstileFailed();
 
-  const result = await createPixCharge(parsed.data, { gateway });
-  if (!result.ok) {
-    return new Response(JSON.stringify({ error: result.error }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const result = await createPixCharge(parsed.data, idempotencyKey, deps.donations());
+  if (result.ok) return json(200, result.value);
 
-  return new Response(JSON.stringify(result.value), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-    },
-  });
+  switch (result.error) {
+    case "idempotency_conflict":
+      return json(409, { error: result.error, message: "Recarregue a página e gere uma nova doação." });
+    case "gateway_rejected":
+      return json(502, {
+        error: result.error,
+        message: "O provedor de pagamento recusou a cobrança. Tente outro valor ou mais tarde.",
+      });
+    case "gateway_unavailable":
+      return json(503, {
+        error: result.error,
+        message: "O provedor de pagamento está indisponível no momento. Tente novamente em instantes.",
+      });
+    default:
+      return internalError();
+  }
 }
