@@ -1,3 +1,6 @@
+export * from "./common/schema.js";
+export * from "./common/types.js";
+
 export * from "./triage/schema.js";
 export * from "./triage/types.js";
 
