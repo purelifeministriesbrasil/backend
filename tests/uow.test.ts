@@ -2,25 +2,49 @@ import { describe, it, expect, vi } from "vitest";
 import { createTriageUnitOfWork } from "../src/infrastructure/db/unit-of-work.js";
 import { createAesGcmProvider } from "../src/infrastructure/crypto/aes-gcm.js";
 import { triageSubmissions, triageConsents } from "../src/infrastructure/db/schema.js";
+import { randomKeyB64 } from "./helpers.js";
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe("Triage Unit of Work Atomic Transactions (§5.4)", () => {
-  const testKeyV1 = btoa("12345678901234567890123456789012");
-  const enc = createAesGcmProvider({ 1: testKeyV1 }, 1);
+  const enc = createAesGcmProvider({ 1: randomKeyB64() }, 1);
+  const input = (idempotencyKey = crypto.randomUUID()) => ({
+    referenceCode: "PLM-AAAA-BBBB",
+    idempotencyKey,
+    triage: {
+      programInterest: "residencial" as const,
+      contactChannel: "whatsapp" as const,
+      contactPlaintext: JSON.stringify({ fullName: "João Silva", email: "joao@exemplo.com" }),
+      reportPlaintext: "Pedido de ajuda pastoral",
+      retentionUntil: new Date(),
+    },
+    consent: {
+      purpose: "avaliacao_e_contato_para_aconselhamento",
+      policyVersion: "2026-09-19",
+      originRoute: "/triagem/",
+      grantedAt: new Date(),
+    },
+  });
 
-  it("executes submission and consent within a single atomic database transaction", async () => {
+  function mockDb(opts: { conflict?: boolean; failConsent?: boolean }, operations: string[]) {
     const fixedId = "test-submission-uuid-1234";
-    const operations: string[] = [];
-
-    const mockTx = {
+    const tx = {
       insert: vi.fn((table: any) => ({
         values: vi.fn((values: any) => {
           if (table === triageSubmissions) {
             operations.push("insert_submission");
+            expect(values.idempotencyKey).toBeTruthy();
             return {
-              returning: vi.fn(async () => [{ id: fixedId }]),
+              onConflictDoNothing: vi.fn(() => ({
+                returning: vi.fn(async () => (opts.conflict ? [] : [{ id: fixedId }])),
+              })),
             };
           }
           if (table === triageConsents) {
+            if (opts.failConsent) {
+              operations.push("insert_consent_fail");
+              throw new Error("DB Connection Interrupted during consent recording");
+            }
             operations.push("insert_consent");
             expect(values.triageSubmissionId).toBe(fixedId);
             return Promise.resolve();
@@ -28,50 +52,46 @@ describe("Triage Unit of Work Atomic Transactions (§5.4)", () => {
           return Promise.resolve();
         }),
       })),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(async () => {
+            operations.push("select_existing");
+            return [{ id: "existing-id", referenceCode: "PLM-EXIS-TING" }];
+          }),
+        })),
+      })),
       update: vi.fn(() => ({
         set: vi.fn((setValues: any) => {
           operations.push("update_ciphertexts");
           expect(setValues.contactCiphertext).toBeTruthy();
           expect(setValues.contactIv).toBeTruthy();
-          return {
-            where: vi.fn(async () => {}),
-          };
+          expect(JSON.stringify(setValues)).not.toContain("João");
+          return { where: vi.fn(async () => {}) };
         }),
       })),
     };
-
-    const mockDb = {
+    return {
       transaction: vi.fn(async (callback: any) => {
         operations.push("begin_transaction");
-        const res = await callback(mockTx);
-        operations.push("commit_transaction");
-        return res;
+        try {
+          const res = await callback(tx);
+          operations.push("commit_transaction");
+          return res;
+        } catch (err) {
+          operations.push("rollback_transaction");
+          throw err;
+        }
       }),
     };
+  }
 
-    const uow = createTriageUnitOfWork(mockDb as any, enc);
+  it("executes submission, ciphertexts and consent within a single atomic transaction", async () => {
+    const operations: string[] = [];
+    const db = mockDb({}, operations);
+    const result = await createTriageUnitOfWork(db as any, enc).createSubmissionWithConsent(input());
 
-    const result = await uow.createSubmissionWithConsent({
-      referenceCode: "PLM-123456",
-      triage: {
-        programInterest: "residencial",
-        contactChannel: "whatsapp",
-        contactPlaintext: JSON.stringify({ fullName: "João Silva", email: "joao@exemplo.com" }),
-        reportPlaintext: "Pedido de ajuda pastoral",
-        retentionUntil: new Date(),
-      },
-      consent: {
-        purpose: "avaliacao_e_contato_para_aconselhamento",
-        policyVersion: "2026-09-19",
-        originRoute: "/triagem/",
-        grantedAt: new Date(),
-      },
-    });
-
-    expect(result.submissionId).toBe(fixedId);
-    expect(mockDb.transaction).toHaveBeenCalledTimes(1);
-
-    // Verifica a ordem atômica exata das operações dentro da transação
+    expect(result).toEqual({ submissionId: "test-submission-uuid-1234", referenceCode: "PLM-AAAA-BBBB", created: true });
+    expect(db.transaction).toHaveBeenCalledTimes(1);
     expect(operations).toEqual([
       "begin_transaction",
       "insert_submission",
@@ -81,71 +101,22 @@ describe("Triage Unit of Work Atomic Transactions (§5.4)", () => {
     ]);
   });
 
-  it("aborts and bubbles error if any step in the transaction fails (rollback guarantee)", async () => {
-    const fixedId = "test-fail-uuid-5678";
+  it("returns the previously issued reference code on idempotent replay without writing again", async () => {
     const operations: string[] = [];
+    const db = mockDb({ conflict: true }, operations);
+    const result = await createTriageUnitOfWork(db as any, enc).createSubmissionWithConsent(input());
 
-    const failingTx = {
-      insert: vi.fn((table: any) => ({
-        values: vi.fn((_values: any) => {
-          if (table === triageSubmissions) {
-            operations.push("insert_submission");
-            return {
-              returning: vi.fn(async () => [{ id: fixedId }]),
-            };
-          }
-          if (table === triageConsents) {
-            operations.push("insert_consent_fail");
-            throw new Error("DB Connection Interrupted during consent recording");
-          }
-          return Promise.resolve();
-        }),
-      })),
-      update: vi.fn(() => ({
-        set: vi.fn(() => {
-          operations.push("update_ciphertexts");
-          return {
-            where: vi.fn(async () => {}),
-          };
-        }),
-      })),
-    };
+    expect(result).toEqual({ submissionId: "existing-id", referenceCode: "PLM-EXIS-TING", created: false });
+    expect(operations).toEqual(["begin_transaction", "insert_submission", "select_existing", "commit_transaction"]);
+  });
 
-    const mockDb = {
-      transaction: vi.fn(async (callback: any) => {
-        operations.push("begin_transaction");
-        try {
-          const res = await callback(failingTx);
-          operations.push("commit_transaction");
-          return res;
-        } catch (err) {
-          operations.push("rollback_transaction");
-          throw err;
-        }
-      }),
-    };
+  it("aborts and bubbles error if any step in the transaction fails (rollback guarantee)", async () => {
+    const operations: string[] = [];
+    const db = mockDb({ failConsent: true }, operations);
 
-    const uow = createTriageUnitOfWork(mockDb as any, enc);
-
-    await expect(
-      uow.createSubmissionWithConsent({
-        referenceCode: "PLM-FAIL-01",
-        triage: {
-          programInterest: "online",
-          contactChannel: "email",
-          contactPlaintext: JSON.stringify({ fullName: "Falha", email: "falha@exemplo.com" }),
-          reportPlaintext: "Relato",
-          retentionUntil: new Date(),
-        },
-        consent: {
-          purpose: "avaliacao_e_contato_para_aconselhamento",
-          policyVersion: "2026-09-19",
-          originRoute: "/triagem/",
-          grantedAt: new Date(),
-        },
-      })
-    ).rejects.toThrow("DB Connection Interrupted during consent recording");
-
+    await expect(createTriageUnitOfWork(db as any, enc).createSubmissionWithConsent(input())).rejects.toThrow(
+      "DB Connection Interrupted during consent recording"
+    );
     expect(operations).toEqual([
       "begin_transaction",
       "insert_submission",
