@@ -1,119 +1,122 @@
 # purelife-api — Backend Cloudflare Worker & Clean Architecture
 
 [![Cloudflare Workers](https://img.shields.io/badge/Runtime-Cloudflare%20Workers-F38020.svg)](https://workers.cloudflare.com)
-[![Clean Architecture](https://img.shields.io/badge/Architecture-DDD%20%2F%20Clean-success.svg)](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
 [![Supabase Postgres](https://img.shields.io/badge/Database-Supabase%20Postgres-3ECF8E.svg)](https://supabase.com)
 [![Drizzle ORM](https://img.shields.io/badge/ORM-Drizzle-C5F74F.svg)](https://orm.drizzle.team)
 [![Cryptography](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20AAD-blue.svg)](./src/infrastructure/crypto)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Security Policy](https://img.shields.io/badge/Security-Policy-red.svg)](./SECURITY.md)
 
-Backend de borda do ministério **Pure Life Ministries Brasil** (`purelifeministriesbrasil.org`), implementado como um **Cloudflare Worker** serverless em TypeScript com **Clean Architecture (DDD)**, persistência no **Supabase Postgres** via **Drizzle ORM**, integração financeira com gateway Asaas (PIX Dinâmico), criptografia de dados sensíveis em repouso com **AES-256-GCM + AAD** e expurgo automatizado em conformidade com a LGPD (Art. 11 — Dados Sensíveis).
+API de borda do **Pure Life Ministries Brasil** (`api.purelifebrasil.org`): Cloudflare Worker em TypeScript
+(Hono) com **Clean Architecture**, persistência no **Supabase Postgres** via **Drizzle ORM**, PIX dinâmico via
+**Asaas ou Mercado Pago**, criptografia de campo **AES-256-GCM + AAD** e expurgo LGPD automatizado.
 
 ---
 
-## 1. Princípios Arquiteturais e Fronteiras
+## 1. Princípios
 
-Em estrita observância à diretriz canônica do ecossistema:
-> **"Front com Front, Back com Back e Docs com Docs."**
-
-1. **Clean Architecture / Inversão de Dependência**: O núcleo de regras de negócio (`domain/` e `application/`) é 100% puro e isolado de frameworks, bibliotecas HTTP e drivers de banco.
-2. **Auditoria Automatizada de Fronteiras**: O linter arquitetural (`node ./scripts/verify-boundaries.mjs`, executado via `pnpm lint`) verifica todos os 39 arquivos TypeScript para impedir vazamento de dependências entre camadas.
-3. **Criptografia de Campo em Repouso (ADR-004)**: Dados sensíveis pastorais (nome, e-mail, telefone, relato pessoal) são criptografados individualmente com WebCrypto AES-256-GCM. O identificador UUID da submissão é amarrado como *Additional Authenticated Data (AAD)* para neutralizar ataques de realocação criptográfica.
-4. **Idempotência e Modelo de Lease para Webhooks (ADR-005)**: O processamento de confirmações de pagamento Asaas opera sob concessão atômica (`lease`) com TTL de 30 segundos, prevenindo concorrência, duplicação e *race conditions*.
-5. **Expurgo Diário Automatizado LGPD**: Cloudflare Cron Trigger programado diariamente (`0 3 * * *`) expurga dados confidenciais após o período regulamentar de retenção e aplica sentinelas criptográficas de expurgo verificado.
+1. **Fonte única de verdade do banco**: `drizzle/*.sql`, aplicadas em ordem por `pnpm db:migrate`.
+   `src/infrastructure/db/schema.ts` espelha o SQL coluna a coluna (nomes de constraints inclusive).
+2. **Fail-closed**: cada funcionalidade valida sua configuração por requisição. Segredo ausente ou inválido
+   (chave AES ≠ 32 bytes, chave de teste do Turnstile em produção, provedor PIX incompleto) → `503`, com log
+   contendo apenas os **nomes** das chaves.
+3. **Clean Architecture verificada**: `pnpm lint` roda ESLint (typescript-eslint) e
+   `scripts/verify-boundaries.mjs`, que resolve o caminho real de cada import e bloqueia dependências proibidas
+   entre `domains/`, `application/`, `infrastructure/`, `presentation/` e `schemas/`.
+4. **Criptografia de campo (ADR-004)**: contato, relato, mensagens e e-mails são cifrados com AES-256-GCM; o AAD
+   amarra `entidade:id:campo:versão`. IV aleatório de 96 bits por operação. E-mails usados para deduplicação são
+   guardados como HMAC-SHA256 com pepper (`HASH_PEPPER`), nunca em claro.
+5. **Idempotência ponta a ponta**: formulários e doações exigem o header `Idempotency-Key` (UUID v4); webhooks
+   usam o modelo de *lease* de 60 s com no máximo 5 tentativas (ADR-005).
+6. **Máquina de estados de cobrança**: uma doação `confirmed` nunca regride para `pending`, `failed` ou `expired`;
+   eventos fora de ordem são ignorados e auditados em `audit_events`.
+7. **LGPD**: Cron diário (`0 3 * * *`) nulifica triagens e contatos com 180 dias de retenção vencidos.
 
 ---
 
-## 2. Estrutura de Diretórios
+## 2. Endpoints
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` | `/health` | Liveness probe |
+| `POST` | `/api/forms/triagem` | Triagem confidencial (Turnstile + `Idempotency-Key`) |
+| `POST` | `/api/forms/contato` | Contato institucional (Turnstile + `Idempotency-Key`) |
+| `POST` | `/api/forms/newsletter` | Inscrição com double opt-in (JSON ou form POST sem JS) |
+| `POST` | `/api/forms/newsletter/confirm` | Confirmação a partir da página `/newsletter/confirmar/` |
+| `POST` | `/api/donations/create-pix` | Cria cobrança PIX no provedor ativo (`PAYMENT_PROVIDER`) |
+| `POST` | `/api/webhooks/payment` | Webhook do provedor ativo (token Asaas ou HMAC Mercado Pago) |
+
+---
+
+## 3. Estrutura
 
 ```
 backend/
+├── drizzle/                      # Migrations SQL versionadas (fonte única de verdade)
 ├── scripts/
-│   └── verify-boundaries.mjs     # Linter automatizado de fronteiras de Clean Architecture
+│   ├── migrate.mjs               # Aplica drizzle/*.sql com checksum em schema_migrations
+│   ├── pastoral-inbox.mjs        # Caixa pastoral: decifra localmente e audita cada leitura
+│   └── verify-boundaries.mjs     # Linter de fronteiras da Clean Architecture
 ├── src/
-│   ├── domain/                   # Entidades, Value Objects e Contratos Puros (ZERO dependências externas)
-│   │   ├── entities/             # Triage, Donation, WebhookEvent
-│   │   └── repositories/         # Interfaces abstratas de portas secundárias
-│   ├── application/              # Casos de Uso (Orquestração e Regras da Aplicação)
-│   │   ├── ports/                # Interfaces de gateways, criptografia e Unit of Work
-│   │   └── usecases/             # submit-triage, create-pix-charge, purge-triage, process-webhook
-│   ├── infrastructure/           # Adaptadores Secundários Concretos
-│   │   ├── crypto/               # WebCrypto AES-256-GCM com rotação de chaves
-│   │   ├── db/                   # Drizzle ORM, cliente de banco Supabase, schemas e Unit of Work
-│   │   ├── payments/             # Gateways Asaas e Mercado Pago
-│   │   └── security/             # Validador Cloudflare Turnstile e Request Guards
-│   ├── presentation/             # Adaptadores Primários (HTTP Workers API e Cron Handlers)
-│   │   ├── cron/                 # Handler agendado de expurgo LGPD
-│   │   ├── donations/            # Geração de cobrança PIX dinâmico
-│   │   ├── forms/                # Handlers de triagem, contato e newsletter
-│   │   ├── webhooks/             # Webhooks idempotentes de pagamento
-│   │   └── health.ts             # Endpoint de liveness probe (/health)
-│   └── index.ts                  # Entrypoint principal do Cloudflare Worker
-├── tests/                        # 36 testes automatizados com Vitest
-│   ├── canary.test.ts            # Testes sentinela de zero vazamento de dados em logs
-│   ├── crypto.test.ts            # Testes de criptografia AES-256-GCM e adulteração de AAD
-│   ├── purge.test.ts             # Testes de expurgo LGPD e idempotência
-│   ├── request-guards.test.ts    # Testes de proteção contra DDoS, CORS e payload excessivo
-│   ├── scrubber.test.ts          # Testes de sanitização e mascaramento de logs
-│   ├── state-machine.test.ts     # Testes da máquina de estados de transações
-│   ├── uow.test.ts               # Testes de consistência transacional do Unit of Work
-│   └── webhook.test.ts           # Testes de validação de assinatura e leases de webhook
-├── wrangler.toml                 # Configuração do Cloudflare Worker e Cron Triggers
-├── tsconfig.json                 # Configuração estrita do TypeScript
-└── package.json
+│   ├── domains/                  # Regras puras (máquina de estados de cobrança)
+│   ├── application/              # Portas e casos de uso (triagem, contato, newsletter, PIX, webhook, expurgo)
+│   ├── infrastructure/           # Config, cripto, Drizzle, Resend, Asaas, Mercado Pago, Turnstile, logs
+│   ├── presentation/             # Handlers HTTP e cron
+│   ├── schemas/                  # Contratos Zod — cópia idêntica em frontend/src/schemas
+│   └── index.ts                  # Composition root (Hono + scheduled)
+└── tests/                        # Vitest: unitários, AppSec e integração com Postgres real
 ```
 
 ---
 
-## 3. Instalação e Execução
-
-### Pré-requisitos
-- Node.js 22 LTS
-- pnpm 10+
-- Wrangler CLI 3+
-
-### Comandos Disponíveis
+## 4. Comandos
 
 ```bash
-# Instalar dependências
 pnpm install
+pnpm dev                 # wrangler dev (lê .dev.vars)
+pnpm lint                # ESLint + fronteiras
+pnpm typecheck           # tsc --noEmit
+pnpm test                # Vitest (integração com banco roda se TEST_DATABASE_URL estiver definido)
+pnpm verify              # lint + typecheck + test (validação completa)
+pnpm db:migrate          # aplica drizzle/*.sql em DATABASE_URL
+pnpm db:migrate:dry-run  # lista migrations pendentes
+pnpm deploy              # wrangler deploy
+```
 
-# Executar suíte completa de testes automatizados (36 testes)
-pnpm test
+Testes de integração (Postgres descartável — as tabelas são truncadas):
 
-# Verificar fronteiras arquiteturais (Clean Architecture Linter)
-pnpm run lint
-
-# Compilar código TypeScript
-pnpm run build
-
-# Iniciar servidor de desenvolvimento local com Wrangler
-pnpm run dev
+```bash
+DATABASE_URL=postgresql://postgres@127.0.0.1:5432/postgres pnpm db:migrate
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/postgres pnpm test
 ```
 
 ---
 
-## 4. Variáveis de Ambiente e Segredos
+## 5. Configuração
 
-No ambiente de produção ou arquivo `.dev.vars` para execução local:
+- Desenvolvimento: copie `.dev.vars.example` para `.dev.vars` (documenta **todas** as variáveis).
+- Produção: variáveis não secretas em `[vars]` do `wrangler.toml`; segredos com `wrangler secret put`.
+- Scripts Node (migrations, caixa pastoral): veja `.env.example`.
 
-```ini
-PUBLIC_SITE_ORIGIN=https://purelifeministriesbrasil.org
-ENVIRONMENT=production
-DATABASE_URL=postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres
-TRIAGE_KEY_V1=base64-encoded-32-byte-aes-key
-ASAAS_API_KEY=your-asaas-api-key
-ASAAS_WEBHOOK_SECRET=your-asaas-webhook-secret
-TURNSTILE_SECRET_KEY=your-cloudflare-turnstile-secret
-RESEND_API_KEY=your-resend-api-key
-```
+Runbook completo de implantação nas contas institucionais:
+[documentação → Operações → Deploy](https://purelifeministriesbrasil.github.io/documentation/operations/deployment/).
 
 ---
 
-## 5. Governança e Contribuição
+## 6. Caixa pastoral (leitura de dados cifrados)
 
-- [Código de Conduta](CODE_OF_CONDUCT.md)
-- [Guia de Contribuição](CONTRIBUTING.md)
-- [Política de Segurança e LGPD](SECURITY.md)
-- [Licença MIT](LICENSE)
+O Table Editor do Supabase exibe apenas ciphertext. Até existir um painel dedicado, a equipe autorizada usa:
+
+```bash
+OPERATOR=nome@purelifebrasil.org node scripts/pastoral-inbox.mjs list
+OPERATOR=nome@purelifebrasil.org node scripts/pastoral-inbox.mjs show PLM-XXXX-XXXX --reason "primeiro contato" --include-report
+OPERATOR=nome@purelifebrasil.org node scripts/pastoral-inbox.mjs set-status PLM-XXXX-XXXX contacted
+```
+
+Cada leitura grava `audit_events` (quem, quando, motivo). Execute somente em máquina confiável.
+
+---
+
+## 7. Governança
+
+- [Código de Conduta](CODE_OF_CONDUCT.md) · [Contribuição](CONTRIBUTING.md) · [Segurança e LGPD](SECURITY.md) · [Licença MIT](LICENSE)

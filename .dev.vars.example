@@ -1,13 +1,53 @@
 # ==============================================================================
-# Pure Life Ministries Brasil — Cloudflare Workers Local Secrets (Template)
+# Pure Life Ministries Brasil — segredos locais do `wrangler dev` (TEMPLATE)
 # ==============================================================================
-# Renomeie para .dev.vars para uso com 'wrangler dev'
+# cp .dev.vars.example .dev.vars   (o .dev.vars é ignorado pelo Git)
+# Valores abaixo são EXEMPLOS/CHAVES DE TESTE. Nenhum segredo real deve entrar aqui.
 
+# ─── Núcleo ───────────────────────────────────────────────────────────────────
+# Origem do frontend autorizada (CORS + verificação de Origin). Em dev: Astro na 4321.
 PUBLIC_SITE_ORIGIN=http://localhost:4321
+# development | production (production proíbe chaves de teste do Turnstile e origens localhost)
 ENVIRONMENT=development
-DATABASE_URL=postgresql://postgres.exemplo:[SENHA]@aws-0-sa-east-1.pooler.supabase.com:5432/postgres
-TRIAGE_KEY_V1=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-ASAAS_API_KEY=$aact_exemplo_sandbox_token...
-ASAAS_WEBHOOK_SECRET=segredo_webhook_configurado_no_asaas
+
+# ─── Banco (Supabase Postgres) ────────────────────────────────────────────────
+# Supabase → Connect → "Transaction pooler" (porta 6543). Para o Postgres local de dev:
+# postgresql://postgres:postgres@127.0.0.1:54322/postgres  (supabase start)
+DATABASE_URL=postgresql://postgres.SEU_PROJETO:SENHA@aws-0-sa-east-1.pooler.supabase.com:6543/postgres
+
+# ─── Criptografia de campo (AES-256-GCM) ──────────────────────────────────────
+# 32 bytes em Base64: openssl rand -base64 32   (gere uma chave própria; nunca reutilize a de produção)
+TRIAGE_KEY_V1=
+# Versão usada para NOVAS cifras (rotação: adicione TRIAGE_KEY_V2 e aponte para 2)
+TRIAGE_KEY_CURRENT_VERSION=1
+# Pepper do HMAC de e-mails (deduplicação sem e-mail em claro): openssl rand -base64 32
+HASH_PEPPER=
+
+# ─── Cloudflare Turnstile ─────────────────────────────────────────────────────
+# Chave de TESTE oficial (sempre aprova). Bloqueada pelo Worker quando ENVIRONMENT=production.
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
-RESEND_API_KEY=re_exemplo_123456789
+
+# ─── E-mail (Resend) ──────────────────────────────────────────────────────────
+# Obrigatório para a newsletter (double opt-in). Triagem/contato funcionam sem, apenas sem aviso à equipe.
+RESEND_API_KEY=re_exemplo
+EMAIL_FROM=Pure Life Ministries Brasil <nao-responda@purelifebrasil.org>
+STAFF_NOTIFICATION_EMAIL=contato@purelifebrasil.org
+
+# ─── Pagamentos PIX ───────────────────────────────────────────────────────────
+# asaas | mercadopago
+PAYMENT_PROVIDER=asaas
+# Validade do QR Code em minutos (30 a 43200)
+PIX_EXPIRATION_MINUTES=60
+
+# Asaas (sandbox): https://sandbox.asaas.com → Integrações
+ASAAS_API_BASE_URL=https://api-sandbox.asaas.com/v3
+ASAAS_API_KEY=
+# Token que você define ao cadastrar o webhook (NÃO use a API key)
+ASAAS_WEBHOOK_SECRET=
+# ID do cliente "Doador Anônimo" (cus_...) cadastrado com o CNPJ do ministério
+ASAAS_DONATION_CUSTOMER_ID=
+
+# Mercado Pago (alternativo): Suas integrações → Credenciais de teste / Webhooks
+MERCADOPAGO_ACCESS_TOKEN=
+MERCADOPAGO_WEBHOOK_SECRET=
+MERCADOPAGO_PAYER_FALLBACK_EMAIL=doacoes@purelifebrasil.org
