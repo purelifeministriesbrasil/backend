@@ -26,7 +26,8 @@ const FORBIDDEN_PACKAGES = {
   domains: [/^drizzle-orm/, /^postgres$/, /^hono/, /^resend$/, /^@neondatabase\//, /^cloudflare:/],
   application: [/^drizzle-orm/, /^postgres$/, /^hono/, /^resend$/, /^@neondatabase\//, /^cloudflare:/],
   presentation: [/^postgres$/, /^drizzle-orm/, /^@neondatabase\//],
-  schemas: [/^(?!zod$).+/],
+  // schemas: apenas o Zod (clássico ou o subpacote oficial zod/mini).
+  schemas: [/^(?!zod(\/mini)?$).+/],
 };
 
 // Camadas de destino proibidas para imports relativos.
