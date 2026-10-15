@@ -7,7 +7,7 @@ describe("Hono Router & Security Middleware Integration", () => {
   const key = () => ({ "Idempotency-Key": crypto.randomUUID() });
 
   it("handles GET /health with 200 and healthy status", async () => {
-    const res = await app.fetch(new Request("https://api.purelifebrasil.org/health"), env);
+    const res = await app.fetch(new Request("https://api.purelifeministriesbrasil.org/health"), env);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { status: string; service: string };
     expect(body.status).toBe("healthy");
@@ -15,20 +15,20 @@ describe("Hono Router & Security Middleware Integration", () => {
   });
 
   it("handles unmatched route with 404 not_found JSON", async () => {
-    const res = await app.fetch(new Request("https://api.purelifebrasil.org/api/nonexistent"), env);
+    const res = await app.fetch(new Request("https://api.purelifeministriesbrasil.org/api/nonexistent"), env);
     expect(res.status).toBe(404);
     expect(((await res.json()) as { error: string }).error).toBe("not_found");
   });
 
   it("sets security headers on all responses", async () => {
-    const res = await app.fetch(new Request("https://api.purelifebrasil.org/health"), env);
+    const res = await app.fetch(new Request("https://api.purelifeministriesbrasil.org/health"), env);
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Strict-Transport-Security")).toContain("max-age=");
   });
 
   it("answers CORS preflight for the configured origin and allows Idempotency-Key", async () => {
     const res = await app.fetch(
-      new Request("https://api.purelifebrasil.org/api/forms/triagem", {
+      new Request("https://api.purelifeministriesbrasil.org/api/forms/triagem", {
         method: "OPTIONS",
         headers: {
           Origin: SITE,
@@ -44,7 +44,7 @@ describe("Hono Router & Security Middleware Integration", () => {
 
   it("does not reflect CORS for foreign origins", async () => {
     const res = await app.fetch(
-      new Request("https://api.purelifebrasil.org/api/forms/triagem", {
+      new Request("https://api.purelifeministriesbrasil.org/api/forms/triagem", {
         method: "OPTIONS",
         headers: { Origin: "https://evil.example", "Access-Control-Request-Method": "POST" },
       }),
@@ -55,7 +55,7 @@ describe("Hono Router & Security Middleware Integration", () => {
 
   it("rejects localhost origins in production", async () => {
     const res = await app.fetch(
-      new Request("https://api.purelifebrasil.org/api/forms/triagem", {
+      new Request("https://api.purelifeministriesbrasil.org/api/forms/triagem", {
         method: "OPTIONS",
         headers: { Origin: "http://localhost:4321", "Access-Control-Request-Method": "POST" },
       }),

@@ -28,6 +28,6 @@ A liderança técnica e o conselho gestor do ministério são responsáveis por 
 
 ## Relato de Violações
 
-Instâncias de comportamento abusivo, ofensivo ou em desacordo com este Código de Conduta devem ser reportadas à equipe responsável através do e-mail: **conduta@purelifebrasil.org**.
+Instâncias de comportamento abusivo, ofensivo ou em desacordo com este Código de Conduta devem ser reportadas à equipe responsável através do e-mail: **purelifeministriesbrasil1986@gmail.com** (assunto: "Código de Conduta").
 
 Todas as queixas serão analisadas com confidencialidade, justiça e integridade pastoral.

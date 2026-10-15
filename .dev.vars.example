@@ -30,8 +30,8 @@ TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 # ─── E-mail (Resend) ──────────────────────────────────────────────────────────
 # Obrigatório para a newsletter (double opt-in). Triagem/contato funcionam sem, apenas sem aviso à equipe.
 RESEND_API_KEY=re_exemplo
-EMAIL_FROM=Pure Life Ministries Brasil <nao-responda@purelifebrasil.org>
-STAFF_NOTIFICATION_EMAIL=contato@purelifebrasil.org
+EMAIL_FROM=Pure Life Ministries Brasil <nao-responda@purelifeministriesbrasil.org>
+STAFF_NOTIFICATION_EMAIL=purelifeministriesbrasil1986@gmail.com
 
 # ─── Pagamentos PIX ───────────────────────────────────────────────────────────
 # asaas | mercadopago
@@ -50,4 +50,4 @@ ASAAS_DONATION_CUSTOMER_ID=
 # Mercado Pago (alternativo): Suas integrações → Credenciais de teste / Webhooks
 MERCADOPAGO_ACCESS_TOKEN=
 MERCADOPAGO_WEBHOOK_SECRET=
-MERCADOPAGO_PAYER_FALLBACK_EMAIL=doacoes@purelifebrasil.org
+MERCADOPAGO_PAYER_FALLBACK_EMAIL=doacoes@purelifeministriesbrasil.org

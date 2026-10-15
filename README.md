@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Security Policy](https://img.shields.io/badge/Security-Policy-red.svg)](./SECURITY.md)
 
-API de borda do **Pure Life Ministries Brasil** (`api.purelifebrasil.org`): Cloudflare Worker em TypeScript
+API de borda do **Pure Life Ministries Brasil** (`api.purelifeministriesbrasil.org`): Cloudflare Worker em TypeScript
 (Hono) com **Clean Architecture**, persistência no **Supabase Postgres** via **Drizzle ORM**, PIX dinâmico via
 **Asaas ou Mercado Pago**, criptografia de campo **AES-256-GCM + AAD** e expurgo LGPD automatizado.
 
@@ -108,9 +108,9 @@ Runbook completo de implantação nas contas institucionais:
 O Table Editor do Supabase exibe apenas ciphertext. Até existir um painel dedicado, a equipe autorizada usa:
 
 ```bash
-OPERATOR=nome@purelifebrasil.org node scripts/pastoral-inbox.mjs list
-OPERATOR=nome@purelifebrasil.org node scripts/pastoral-inbox.mjs show PLM-XXXX-XXXX --reason "primeiro contato" --include-report
-OPERATOR=nome@purelifebrasil.org node scripts/pastoral-inbox.mjs set-status PLM-XXXX-XXXX contacted
+OPERATOR=nome@purelifeministriesbrasil.org node scripts/pastoral-inbox.mjs list
+OPERATOR=nome@purelifeministriesbrasil.org node scripts/pastoral-inbox.mjs show PLM-XXXX-XXXX --reason "primeiro contato" --include-report
+OPERATOR=nome@purelifeministriesbrasil.org node scripts/pastoral-inbox.mjs set-status PLM-XXXX-XXXX contacted
 ```
 
 Cada leitura grava `audit_events` (quem, quando, motivo). Execute somente em máquina confiável.

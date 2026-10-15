@@ -16,10 +16,10 @@ describe("Request Guards (§7.4)", () => {
   });
 
   it("blocks non-POST methods with 405", () => {
-    const req = new Request("https://purelifebrasil.org/api/forms/triagem", {
+    const req = new Request("https://purelifeministriesbrasil.org/api/forms/triagem", {
       method: "GET",
     });
-    const res = guardRequest(req, "https://purelifebrasil.org", {
+    const res = guardRequest(req, "https://purelifeministriesbrasil.org", {
       maxBytes: 8192,
       accept: ["application/json"],
     });
@@ -30,11 +30,11 @@ describe("Request Guards (§7.4)", () => {
   });
 
   it("blocks unacceptable Content-Type with 415", () => {
-    const req = new Request("https://purelifebrasil.org/api/forms/triagem", {
+    const req = new Request("https://purelifeministriesbrasil.org/api/forms/triagem", {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
     });
-    const res = guardRequest(req, "https://purelifebrasil.org", {
+    const res = guardRequest(req, "https://purelifeministriesbrasil.org", {
       maxBytes: 8192,
       accept: ["application/json"],
     });
@@ -44,14 +44,14 @@ describe("Request Guards (§7.4)", () => {
   });
 
   it("blocks divergent Origin with 403", () => {
-    const req = new Request("https://purelifebrasil.org/api/forms/triagem", {
+    const req = new Request("https://purelifeministriesbrasil.org/api/forms/triagem", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Origin: "https://malicious-site.com",
       },
     });
-    const res = guardRequest(req, "https://purelifebrasil.org", {
+    const res = guardRequest(req, "https://purelifeministriesbrasil.org", {
       maxBytes: 8192,
       accept: ["application/json"],
     });
@@ -61,15 +61,15 @@ describe("Request Guards (§7.4)", () => {
   });
 
   it("allows legitimate same-origin requests", () => {
-    const req = new Request("https://purelifebrasil.org/api/forms/triagem", {
+    const req = new Request("https://purelifeministriesbrasil.org/api/forms/triagem", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Origin: "https://purelifebrasil.org",
+        Origin: "https://purelifeministriesbrasil.org",
         "Sec-Fetch-Site": "same-origin",
       },
     });
-    const res = guardRequest(req, "https://purelifebrasil.org", {
+    const res = guardRequest(req, "https://purelifeministriesbrasil.org", {
       maxBytes: 8192,
       accept: ["application/json"],
     });

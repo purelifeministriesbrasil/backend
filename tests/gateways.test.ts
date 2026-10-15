@@ -72,7 +72,7 @@ describe("Asaas gateway", () => {
     createAsaasGateway(config).verifyWebhook({
       rawBody: JSON.stringify(body),
       headers: new Headers(token === null ? {} : { "asaas-access-token": token }),
-      url: "https://api.purelifebrasil.org/api/webhooks/payment",
+      url: "https://api.purelifeministriesbrasil.org/api/webhooks/payment",
     });
 
   const asaasEvent = (event: string) => ({
@@ -115,7 +115,7 @@ describe("Mercado Pago gateway", () => {
   const config = {
     accessToken: "APP_USR-test",
     webhookSecret: "mp_webhook_secret",
-    payerFallbackEmail: "doacoes@purelifebrasil.org",
+    payerFallbackEmail: "doacoes@purelifeministriesbrasil.org",
     pixExpirationMinutes: 60,
   };
 
@@ -144,7 +144,7 @@ describe("Mercado Pago gateway", () => {
     expect(headers["X-Idempotency-Key"]).toBe(key);
     expect(headers.Authorization).toBe("Bearer APP_USR-test");
     const sent = JSON.parse(String(calls[0].init.body));
-    expect(sent).toMatchObject({ transaction_amount: 12.34, payment_method_id: "pix", payer: { email: "doacoes@purelifebrasil.org" } });
+    expect(sent).toMatchObject({ transaction_amount: 12.34, payment_method_id: "pix", payer: { email: "doacoes@purelifeministriesbrasil.org" } });
     expect(sent.date_of_expiration).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}-03:00$/);
   });
 
@@ -155,7 +155,7 @@ describe("Mercado Pago gateway", () => {
     return {
       rawBody: JSON.stringify({ id: 999, type: "payment", action: "payment.updated", data: { id: dataId } }),
       headers: new Headers({ "x-signature": `ts=${ts},v1=${v1}`, "x-request-id": requestId }),
-      url: `https://api.purelifebrasil.org/api/webhooks/payment?data.id=${dataId}&type=payment`,
+      url: `https://api.purelifeministriesbrasil.org/api/webhooks/payment?data.id=${dataId}&type=payment`,
     };
   }
 
