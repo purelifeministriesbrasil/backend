@@ -1,30 +1,28 @@
-import { z } from "zod";
+import { z } from "zod/mini";
 import { emailSchema, turnstileTokenSchema } from "../common/schema.js";
 
-export const createPixSchema = z.object({
+export const createPixSchema = z.strictObject({
   amountCents: z
-    .number()
     .int("O valor deve ser um número inteiro em centavos.")
-    .min(500, "Valor mínimo de R$ 5,00.")
-    .max(5_000_000, "Valor máximo de R$ 50.000,00."),
+    .check(z.gte(500, "Valor mínimo de R$ 5,00."), z.lte(5_000_000, "Valor máximo de R$ 50.000,00.")),
   frequency: z.enum(["one_time", "monthly"]),
-  donorEmail: emailSchema.optional(),
+  donorEmail: z.optional(emailSchema),
   turnstileToken: turnstileTokenSchema,
-}).strict();
+});
 
 /** Resposta pública de `POST /api/donations/create-pix`. */
-export const createPixResponseSchema = z.object({
+export const createPixResponseSchema = z.strictObject({
   chargeId: z.uuid(),
   provider: z.enum(["asaas", "mercadopago"]),
-  pixCopyPaste: z.string().min(1),
+  pixCopyPaste: z.string().check(z.minLength(1)),
   expiresAt: z.iso.datetime({ offset: true }),
-  amountCents: z.number().int(),
-}).strict();
+  amountCents: z.int(),
+});
 
 /** Contrato interno de evento de webhook após verificação de assinatura. */
-export const paymentWebhookSchema = z.object({
+export const paymentWebhookSchema = z.strictObject({
   provider: z.enum(["asaas", "mercadopago"]),
-  eventId: z.string().min(1).max(128),
+  eventId: z.string().check(z.minLength(1), z.maxLength(128)),
   eventType: z.enum([
     "payment.confirmed",
     "payment.failed",
@@ -33,7 +31,7 @@ export const paymentWebhookSchema = z.object({
     "payment.refunded",
     "unknown",
   ]),
-  providerChargeId: z.string().min(1).max(128),
-  amountCents: z.number().int().nonnegative(),
+  providerChargeId: z.string().check(z.minLength(1), z.maxLength(128)),
+  amountCents: z.int().check(z.nonnegative()),
   occurredAt: z.iso.datetime({ offset: true }),
-}).strict();
+});

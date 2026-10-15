@@ -1,4 +1,4 @@
-import { z } from "zod";
+import type { z } from "zod/mini";
 import { triageSubmissionSchema } from "./schema.js";
 
 export type TriageSubmission = z.infer<typeof triageSubmissionSchema>;

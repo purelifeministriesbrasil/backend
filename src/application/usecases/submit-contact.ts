@@ -1,6 +1,6 @@
 import type { ContactSubmission } from "../../schemas/index.js";
 import type { ContactRepository } from "../ports/contact-repository.js";
-import type { Notifier } from "../ports/notifier.js";
+import type { DeferTask, Notifier } from "../ports/notifier.js";
 import type { UseCaseResult } from "../ports/result.js";
 import { generateReferenceCode } from "../reference-code.js";
 
@@ -10,6 +10,8 @@ export const CONTACT_RETENTION_DAYS = 180;
 export interface SubmitContactDeps {
   repo: ContactRepository;
   notifier: Notifier | null;
+  /** Quando presente, o aviso à equipe sai depois da resposta: o usuário não espera o Resend. */
+  defer?: DeferTask;
   now?: () => Date;
 }
 
@@ -43,11 +45,14 @@ export async function submitContact(
   }
 
   if (outcome.created && deps.notifier) {
-    await deps.notifier.notifyStaff(
+    const notification = deps.notifier.notifyStaff(
       `Nova mensagem de contato — ${outcome.referenceCode}`,
       `Uma nova mensagem pelo formulário de contato foi registrada com o código ${outcome.referenceCode}.\n` +
         "O conteúdo permanece cifrado no banco; consulte-o pela caixa pastoral."
     );
+    // O registro já está gravado; falha de e-mail é logada pelo adaptador e não altera a resposta.
+    if (deps.defer) await deps.defer(notification);
+    else await notification;
   }
 
   return { ok: true, value: { referenceCode: outcome.referenceCode } };

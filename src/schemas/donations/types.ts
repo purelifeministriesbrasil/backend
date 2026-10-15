@@ -1,4 +1,4 @@
-import { z } from "zod";
+import type { z } from "zod/mini";
 import { createPixSchema, createPixResponseSchema, paymentWebhookSchema } from "./schema.js";
 
 export type CreatePixInput = z.infer<typeof createPixSchema>;

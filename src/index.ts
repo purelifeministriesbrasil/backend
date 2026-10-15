@@ -160,7 +160,11 @@ export function createApp(options: AppOptions = {}) {
     s.assertStorageConfigured();
     return handleTriageSubmission(c.req.raw, c.env, {
       turnstile: s.turnstile,
-      triage: () => ({ uow: createTriageUnitOfWork(s.db, s.enc), notifier: s.optionalNotifier }),
+      triage: () => ({
+        uow: createTriageUnitOfWork(s.db, s.enc),
+        notifier: s.optionalNotifier,
+        defer: (task) => runAfterResponse(c, task.then(() => undefined)),
+      }),
     });
   });
 
@@ -169,7 +173,11 @@ export function createApp(options: AppOptions = {}) {
     s.assertStorageConfigured();
     return handleContactSubmission(c.req.raw, c.env, {
       turnstile: s.turnstile,
-      contact: () => ({ repo: createDrizzleContactRepository(s.db, s.enc), notifier: s.optionalNotifier }),
+      contact: () => ({
+        repo: createDrizzleContactRepository(s.db, s.enc),
+        notifier: s.optionalNotifier,
+        defer: (task) => runAfterResponse(c, task.then(() => undefined)),
+      }),
     });
   });
 

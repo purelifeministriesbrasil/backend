@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import type { z } from "zod/mini";
 import { assertBodySize } from "../infrastructure/security/request-guards.js";
 
 export const NO_STORE = { "Content-Type": "application/json", "Cache-Control": "no-store" } as const;
@@ -34,7 +34,7 @@ export async function readJson(request: Request, maxBytes: number): Promise<{ bo
 }
 
 /** 422 com mensagens por campo (sem ecoar valores enviados). */
-export function validationFailed(error: z.ZodError): Response {
+export function validationFailed(error: z.core.$ZodError): Response {
   const fields: Record<string, string> = {};
   for (const issue of error.issues) {
     const path = issue.path.join(".") || "_";
