@@ -7,3 +7,9 @@ export interface Notifier {
   notifyStaff(subject: string, text: string): Promise<boolean>;
   sendToRecipient(to: string, subject: string, text: string): Promise<boolean>;
 }
+
+/**
+ * Agenda trabalho para depois da resposta HTTP (no Worker: `executionCtx.waitUntil`).
+ * Resolve assim que o trabalho foi agendado; fora do runtime Workers pode aguardá-lo inline.
+ */
+export type DeferTask = (task: Promise<unknown>) => Promise<void>;

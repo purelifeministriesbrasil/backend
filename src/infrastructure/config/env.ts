@@ -8,6 +8,8 @@ export interface Env {
   ENVIRONMENT: string;
 
   DATABASE_URL?: string;
+  /** Binding opcional do Cloudflare Hyperdrive (pool de conexões na borda); tem precedência sobre DATABASE_URL. */
+  HYPERDRIVE?: { connectionString: string };
 
   /** Chaveiro AES-256 (Base64 de 32 bytes). Versões extras: TRIAGE_KEY_V2, TRIAGE_KEY_V3... */
   TRIAGE_KEY_V1?: string;
@@ -77,6 +79,8 @@ function requireKeys(env: Env, feature: string, keys: string[]): void {
 }
 
 export function readDatabaseUrl(env: Env): string {
+  const pooled = env.HYPERDRIVE?.connectionString;
+  if (typeof pooled === "string" && pooled.length > 0) return pooled;
   requireKeys(env, "database", ["DATABASE_URL"]);
   return str(env, "DATABASE_URL");
 }

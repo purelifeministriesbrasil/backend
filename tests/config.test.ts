@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ConfigError,
   readCryptoConfig,
+  readDatabaseUrl,
   readPaymentConfig,
   readTurnstileSecret,
 } from "../src/infrastructure/config/env.js";
@@ -19,6 +20,14 @@ function configError(fn: () => unknown): ConfigError {
 }
 
 describe("Configuração fail-closed", () => {
+  it("prefers the Hyperdrive connection string and falls back to DATABASE_URL", () => {
+    const direct = "postgresql://u:p@db.example:6543/postgres";
+    const pooled = "postgresql://u:p@hyperdrive.local:5432/postgres";
+    expect(readDatabaseUrl(validEnv({ DATABASE_URL: direct }))).toBe(direct);
+    expect(readDatabaseUrl(validEnv({ DATABASE_URL: direct, HYPERDRIVE: { connectionString: pooled } }))).toBe(pooled);
+    expect(configError(() => readDatabaseUrl(validEnv({ DATABASE_URL: undefined }))).message).toContain("DATABASE_URL");
+  });
+
   it("selects the payment provider via PAYMENT_PROVIDER", () => {
     expect(readPaymentConfig(validEnv()).provider).toBe("asaas");
     expect(
