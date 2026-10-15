@@ -7,21 +7,21 @@ compatibility_flags = ["nodejs_compat"]
 [observability]
 enabled = true
 
-# Domínio da API na conta institucional (zona purelifebrasil.org na mesma conta Cloudflare).
+# Domínio da API na conta institucional (zona purelifeministriesbrasil.org na mesma conta Cloudflare).
 # Comente esta seção para publicar apenas em *.workers.dev durante a homologação.
 [[routes]]
-pattern = "api.purelifebrasil.org"
+pattern = "api.purelifeministriesbrasil.org"
 custom_domain = true
 
 [vars]
-PUBLIC_SITE_ORIGIN = "https://purelifebrasil.org"
+PUBLIC_SITE_ORIGIN = "https://purelifeministriesbrasil.org"
 ENVIRONMENT = "production"
 # asaas | mercadopago — o Worker recusa (503) doações/webhooks se as credenciais do escolhido faltarem.
 PAYMENT_PROVIDER = "asaas"
 PIX_EXPIRATION_MINUTES = "60"
 TRIAGE_KEY_CURRENT_VERSION = "1"
-EMAIL_FROM = "Pure Life Ministries Brasil <nao-responda@purelifebrasil.org>"
-STAFF_NOTIFICATION_EMAIL = "contato@purelifebrasil.org"
+EMAIL_FROM = "Pure Life Ministries Brasil <nao-responda@purelifeministriesbrasil.org>"
+STAFF_NOTIFICATION_EMAIL = "purelifeministriesbrasil1986@gmail.com"
 # Asaas: produção é o padrão; para sandbox use https://api-sandbox.asaas.com/v3
 ASAAS_API_BASE_URL = "https://api.asaas.com/v3"
 

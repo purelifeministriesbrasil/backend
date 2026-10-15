@@ -50,7 +50,7 @@ describe("Webhook Processing & Idempotency Lease (§8.4, ADR-005)", () => {
   };
 
   const post = (body: string = JSON.stringify({ event: "PAYMENT_RECEIVED" })) =>
-    new Request("https://api.purelifebrasil.org/api/webhooks/payment", { method: "POST", body });
+    new Request("https://api.purelifeministriesbrasil.org/api/webhooks/payment", { method: "POST", body });
 
   it("returns 413 when webhook payload exceeds 64KB boundary", async () => {
     const deps = createMockDeps();

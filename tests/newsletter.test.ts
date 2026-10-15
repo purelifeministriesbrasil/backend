@@ -125,7 +125,7 @@ describe("POST /api/forms/newsletter", () => {
 
   it("supports the no-JS form fallback with an absolute 303 redirect to the site", async () => {
     const { repo, deps } = setup();
-    const req = new Request("https://api.purelifebrasil.org/api/forms/newsletter", {
+    const req = new Request("https://api.purelifeministriesbrasil.org/api/forms/newsletter", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: SITE, "Sec-Fetch-Site": "same-site" },
       body: "email=leitor%40example.com&website=&policyVersion=2026-09-19",
@@ -139,7 +139,7 @@ describe("POST /api/forms/newsletter", () => {
 
   it("rejects HTTP parameter pollution in form posts", async () => {
     const { deps } = setup();
-    const req = new Request("https://api.purelifebrasil.org/api/forms/newsletter", {
+    const req = new Request("https://api.purelifeministriesbrasil.org/api/forms/newsletter", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Origin: SITE },
       body: "email=a%40example.com&email=b%40example.com&policyVersion=2026-09-19",

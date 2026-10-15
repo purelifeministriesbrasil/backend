@@ -2,7 +2,7 @@ import { vi } from "vitest";
 import type { Env } from "../src/index.js";
 import type { Notifier } from "../src/application/ports/notifier.js";
 
-export const SITE = "https://purelifebrasil.org";
+export const SITE = "https://purelifeministriesbrasil.org";
 
 /** Chave AES/pepper aleatória por execução: nenhum segredo fixo no repositório. */
 export function randomKeyB64(bytes = 32): string {
@@ -18,8 +18,8 @@ export function validEnv(overrides: Partial<Env> = {}): Env {
     HASH_PEPPER: randomKeyB64(),
     TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
     RESEND_API_KEY: "re_test_key",
-    EMAIL_FROM: "Pure Life <nao-responda@purelifebrasil.org>",
-    STAFF_NOTIFICATION_EMAIL: "equipe@purelifebrasil.org",
+    EMAIL_FROM: "Pure Life <nao-responda@purelifeministriesbrasil.org>",
+    STAFF_NOTIFICATION_EMAIL: "equipe@purelifeministriesbrasil.org",
     PAYMENT_PROVIDER: "asaas",
     ASAAS_API_KEY: "asaas_test_key",
     ASAAS_WEBHOOK_SECRET: "asaas_webhook_secret_test",
@@ -34,7 +34,7 @@ export function jsonRequest(
   body: unknown,
   headers: Record<string, string> = {}
 ): Request {
-  return new Request(`https://api.purelifebrasil.org${path}`, {
+  return new Request(`https://api.purelifeministriesbrasil.org${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Origin: SITE, "Sec-Fetch-Site": "same-site", ...headers },
     body: typeof body === "string" ? body : JSON.stringify(body),

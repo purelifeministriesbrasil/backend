@@ -41,8 +41,8 @@ describe("AppSec Zero-Leakage Canary Sentinel Test (§5.1, US-5.5)", () => {
 
     const notifier = createResendNotifier({
       apiKey: "re_test",
-      from: "Pure Life <nao-responda@purelifebrasil.org>",
-      staffRecipient: "equipe@purelifebrasil.org",
+      from: "Pure Life <nao-responda@purelifeministriesbrasil.org>",
+      staffRecipient: "equipe@purelifeministriesbrasil.org",
     });
 
     const result = await submitTriage(

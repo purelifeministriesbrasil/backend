@@ -27,7 +27,7 @@ describe("Configuração fail-closed", () => {
           PAYMENT_PROVIDER: "mercadopago",
           MERCADOPAGO_ACCESS_TOKEN: "APP_USR-x",
           MERCADOPAGO_WEBHOOK_SECRET: "s",
-          MERCADOPAGO_PAYER_FALLBACK_EMAIL: "doacoes@purelifebrasil.org",
+          MERCADOPAGO_PAYER_FALLBACK_EMAIL: "doacoes@purelifeministriesbrasil.org",
         })
       ).provider
     ).toBe("mercadopago");

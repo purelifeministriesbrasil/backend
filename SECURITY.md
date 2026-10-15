@@ -7,7 +7,7 @@ Dada a extrema confidencialidade dos dados tratados por esta API (relatos pastor
 **NÃO crie issues públicas no GitHub.**
 
 Envie seu relatório diretamente para:
-- **E-mail de Segurança**: `seguranca@purelifebrasil.org`
+- **E-mail de Segurança**: `purelifeministriesbrasil1986@gmail.com` (assunto: "Segurança")
 - **Assunto**: `[CRÍTICO - Segurança API] <Resumo>`
 
 ---
