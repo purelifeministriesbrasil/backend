@@ -1,26 +1,31 @@
-# Política de Segurança e Conformidade LGPD — purelife-api
+# Política de Segurança e LGPD — purelife-api
 
-## Segurança: Relato de Vulnerabilidades
+## 1. Como relatar uma vulnerabilidade
 
-Dada a extrema confidencialidade dos dados tratados por esta API (relatos pastorais sensíveis e transações financeiras), qualquer potencial vulnerabilidade deve ser reportada com máxima urgência e absoluto sigilo.
+Esta API trata relatos pastorais sensíveis e pagamentos. Qualquer suspeita de falha deve ser relatada com
+urgência e sigilo. **Não abra uma issue pública.** Envie para:
 
-**NÃO crie issues públicas no GitHub.**
+- **E-mail:** `purelifeministriesbrasil1986@gmail.com`
+- **Assunto:** `[CRÍTICO - Segurança API] <resumo>`
 
-Envie seu relatório diretamente para:
-- **E-mail de Segurança**: `purelifeministriesbrasil1986@gmail.com` (assunto: "Segurança")
-- **Assunto**: `[CRÍTICO - Segurança API] <Resumo>`
+Inclua o endpoint afetado, os passos para reproduzir (sem usar dados reais) e o impacto. Pedimos até 30 dias para
+corrigir antes de qualquer divulgação.
 
 ---
 
-## Governança e Contribuição
+## 2. Regras obrigatórias de proteção de dados
 
-Políticas Mandatórias de Proteção de Dados
-
-1. **Proteção Rigorosa de PII e Dados de Fé/Cura**:
-   - Dados de aconselhamento pastoral recebem tratamento análogo a segredo médico/pastoral sob a LGPD (Lei 13.709/2018).
-   - NUNCA armazene dados de triagem em texto claro no banco de dados.
-   - NUNCA imprima valores decifrados em `console.log`, `console.error` ou traces de observabilidade.
-2. **Testes Canário de Vazamento (Canary Tests)**:
-   - Todo novo endpoint ou fluxo que manipule dados de triagem deve conter um teste automatizado injetando a string canário `__CANARY_SENSITIVE__`, atestando que ela não surge em logs nem em colunas não criptografadas.
-3. **Idempotência e Concorrência**:
-   - Webhooks devem ser protegidos por concessão de lease (`webhook_events`) com tratamento de *stale leases* para impedir reprocessamento ou duplicidade financeira.
+1. **Dados pastorais são sigilosos** (LGPD, Lei 13.709/2018, Art. 11)
+   - Nunca grave triagem, contato ou e-mail em texto claro: cifre com AES-256-GCM antes do banco.
+   - Nunca escreva valores decifrados em `console.*`, logs ou respostas de erro; o `scrubber` é a última
+     barreira, não a primeira.
+2. **Testes canário**
+   - Todo fluxo novo com dados sensíveis injeta a sentinela `__CANARY_SENSITIVE__` e prova que ela não aparece
+     em logs nem em colunas não cifradas (`tests/canary.test.ts`).
+3. **Pagamentos**
+   - Webhooks autenticados (token do Asaas em tempo constante ou HMAC do Mercado Pago) e processados com *lease*
+     em `payment_webhook_events`, para impedir duplicidade.
+4. **Segredos**
+   - Só em `wrangler secret` e no cofre da organização. Nunca em código, testes, logs ou pull requests.
+5. **Retenção**
+   - Triagens e contatos são anulados após 180 dias pelo cron diário.

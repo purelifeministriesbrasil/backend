@@ -1,51 +1,41 @@
 # Guia de Contribuição — purelife-api
 
-O repositório `purelife-api` gerencia as transações críticas, armazenamento seguro de triagens pastorais, webhooks de doações e rotinas criptográficas do **Pure Life Ministries Brasil**.
+Este repositório guarda a API que recebe triagens pastorais, contatos, inscrições e doações do
+**Pure Life Ministries Brasil**. Os dados são sensíveis: cada mudança passa por testes e revisão.
 
 ---
 
-## Diretrizes e Checklist
+## 1. Regras de arquitetura
 
-Regras Estritas de Arquitetura
-
-1. **Clean Architecture e Regra de Dependência**:
-   - `domain/`: **Zero dependências externas**. Não importe Drizzle, bibliotecas de terceiros, runtime da Cloudflare ou HTTP.
-   - `application/`: Depende unicamente de `domain/`. Orquestra casos de uso e define interfaces para serviços secundários.
-   - `infrastructure/`: Implementa os repositórios, esquemas de banco, clientes externos (Resend, Asaas) e criptografia.
-   - `presentation/`: Trata requisições HTTP, valida payloads com `purelife-contracts` e repassa aos casos de uso.
-
-2. **Criptografia Rígida (ADR-004)**:
-   - Campos de triagem pastoral (relato, telefone, e-mail) devem obrigatoriamente transitar cifrados antes de alcançar as tabelas do Neon.
-   - O `triage_submission_id` deve ser fornecido como AAD em todas as operações de cifra/decifra.
-
-3. **Verificação Automatizada de Fronteiras**:
-   - O comando `pnpm run verify:boundaries` analisa todas as árvores de importação e bloqueia violações de camada.
+1. **Clean Architecture** (verificada por `pnpm lint`; ver [`src/README.md`](src/README.md))
+   - `domains/`: regras puras, **sem** dependências externas (nem Drizzle, nem HTTP, nem Cloudflare).
+   - `application/`: casos de uso e portas; depende só de `domains/`.
+   - `infrastructure/`: implementa as portas (banco, cripto, e-mail, gateways, Turnstile).
+   - `presentation/`: valida a requisição com `src/schemas/` e chama os casos de uso.
+2. **Criptografia (ADR-004)**
+   - Contato, relato, mensagens e e-mails são cifrados **antes** de chegar ao banco.
+   - O AAD é `entidade:id:campo:versão`; nunca reutilize um ciphertext em outro registro ou campo.
+3. **Banco**
+   - Mudanças de schema só por migration nova em `drizzle/` (ver [`drizzle/README.md`](drizzle/README.md)).
+4. **Contratos**
+   - `src/schemas/` é idêntica à do `frontend`; altere os dois juntos.
 
 ---
 
-## Validação Local
+## 2. Validação local
 
-Validação Local Obrigatória
-
-Antes de abrir um Pull Request:
 ```bash
-# 1. Executar testes unitários e testes canário de vazamento de dados
-pnpm run test
-
-# 2. Executar auditoria de fronteiras de Clean Architecture
-pnpm run verify:boundaries
-
-# 3. Compilação TypeScript
-pnpm run build
+pnpm verify   # ESLint + fronteiras + typecheck + testes
 ```
 
+Fluxos novos com dados sensíveis precisam de teste no `tests/canary.test.ts`.
+
 ---
 
-## Fluxo de Trabalho Git
+## 3. Fluxo de trabalho Git
 
-Fluxo de Branches e Commits
-
-- Nomeie branches descritivamente: `feat/webhook-retry-policy` ou `fix/triage-aad-binding`.
-- Use mensagens Conventional Commits:
-  - `feat(triage): enforce atomic unit of work on submission`
-  - `test(crypto): add canary leak tests for encrypted payload`
+- Branch a partir do `main`: `feat/…`, `fix/…`, `docs/…`, `ci/…`.
+- Mensagens no padrão *Conventional Commits*:
+  - `feat(triage): grava o consentimento na mesma transação`
+  - `test(crypto): cobre a troca de versão da chave`
+- Nunca inclua segredos, `.env`, `.dev.vars` ou dados reais em commits, testes ou pull requests.
