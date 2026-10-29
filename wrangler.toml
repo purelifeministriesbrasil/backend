@@ -26,7 +26,7 @@ STAFF_NOTIFICATION_EMAIL = "purelifeministriesbrasil1986@gmail.com"
 ASAAS_API_BASE_URL = "https://api.asaas.com/v3"
 
 # Segredos obrigatórios (`wrangler secret put <NOME>`), nunca neste arquivo:
-#   DATABASE_URL            Supabase → Connect → Transaction pooler (porta 6543)
+#   DATABASE_URL            Neon → Connect → conexão com pooling (host com "-pooler"); reserva do Hyperdrive
 #   TRIAGE_KEY_V1           openssl rand -base64 32
 #   HASH_PEPPER             openssl rand -base64 32
 #   TURNSTILE_SECRET_KEY    Cloudflare → Turnstile → widget do site
@@ -34,13 +34,13 @@ ASAAS_API_BASE_URL = "https://api.asaas.com/v3"
 # Provedor Asaas:           ASAAS_API_KEY, ASAAS_WEBHOOK_SECRET, ASAAS_DONATION_CUSTOMER_ID
 # Provedor Mercado Pago:    MERCADOPAGO_ACCESS_TOKEN, MERCADOPAGO_WEBHOOK_SECRET, MERCADOPAGO_PAYER_FALLBACK_EMAIL
 
-# Hyperdrive (opcional, recomendado): mantém conexões abertas com o Supabase na borda e corta
-# 50–150 ms por requisição. Criar uma vez com a conexão do Session pooler (porta 5432):
-#   pnpm exec wrangler hyperdrive create purelife-db --connection-string="postgresql://...:5432/postgres"
-# e descomentar com o id retornado. Com o binding presente, DATABASE_URL vira apenas reserva.
-# [[hyperdrive]]
-# binding = "HYPERDRIVE"
-# id = "<id-retornado>"
+# Hyperdrive: pool de conexões na borda até o Postgres (Neon, sa-east-1). Com o binding presente,
+# a API usa a conexão dele e DATABASE_URL vira apenas reserva. Criado com a conexão DIRETA do Neon
+# (sem "-pooler"). Em `wrangler dev`, defina a variável de ambiente
+# CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE com uma conexão local ou do Neon.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "9194030c37b94749ba819e8428d40edf"
 
 # Expurgo LGPD diário às 03:00 UTC (00:00 em Brasília).
 [triggers]

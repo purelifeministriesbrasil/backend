@@ -10,10 +10,10 @@ PUBLIC_SITE_ORIGIN=http://localhost:4321
 # development | production (production proíbe chaves de teste do Turnstile e origens localhost)
 ENVIRONMENT=development
 
-# ─── Banco (Supabase Postgres) ────────────────────────────────────────────────
-# Supabase → Connect → "Transaction pooler" (porta 6543). Para o Postgres local de dev:
-# postgresql://postgres:postgres@127.0.0.1:54322/postgres  (supabase start)
-DATABASE_URL=postgresql://postgres.SEU_PROJETO:SENHA@aws-0-sa-east-1.pooler.supabase.com:6543/postgres
+# ─── Banco (Neon Postgres) ────────────────────────────────────────────────────
+# Neon → Connect → conexão com pooling (host com "-pooler"), ou um Postgres local de dev.
+# Em produção a API usa o Hyperdrive (binding HYPERDRIVE no wrangler.toml); este valor é a reserva.
+DATABASE_URL=postgresql://USUARIO:SENHA@ep-SEU-ENDPOINT-pooler.c-2.sa-east-1.aws.neon.tech/neondb?sslmode=require
 
 # ─── Criptografia de campo (AES-256-GCM) ──────────────────────────────────────
 # 32 bytes em Base64: openssl rand -base64 32   (gere uma chave própria; nunca reutilize a de produção)

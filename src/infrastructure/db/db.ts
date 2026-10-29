@@ -11,13 +11,14 @@ export interface DbHandle {
 }
 
 /**
- * Cliente Drizzle por requisição sobre PostgreSQL gerenciado (Supabase).
+ * Cliente Drizzle por requisição sobre PostgreSQL gerenciado (Neon, via Hyperdrive na borda).
  * Workers não reaproveitam sockets entre requisições: o cliente nasce e morre com ela.
  *
- * Configuração para Supabase Supavisor em modo transaction (porta 6543):
+ * Configuração compatível com Hyperdrive e com poolers em modo transaction (PgBouncer do Neon):
  * - max: 1 (uma conexão por isolate/requisição)
  * - prepare: false (obrigatório em pooler no modo transaction)
  * - connect_timeout / idle_timeout limitados para falhar rápido
+ * - SSL segue a URL: `sslmode=require` no Neon; o Hyperdrive cuida do TLS até o banco.
  */
 export function createDbClient(databaseUrl: string): DbHandle {
   const client = postgres(databaseUrl, {
