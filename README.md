@@ -1,14 +1,14 @@
 # purelife-api — Backend Cloudflare Worker & Clean Architecture
 
 [![Cloudflare Workers](https://img.shields.io/badge/Runtime-Cloudflare%20Workers-F38020.svg)](https://workers.cloudflare.com)
-[![Supabase Postgres](https://img.shields.io/badge/Database-Supabase%20Postgres-3ECF8E.svg)](https://supabase.com)
+[![Neon Postgres](https://img.shields.io/badge/Database-Neon%20Postgres-00E599.svg)](https://neon.tech)
 [![Drizzle ORM](https://img.shields.io/badge/ORM-Drizzle-C5F74F.svg)](https://orm.drizzle.team)
 [![Cryptography](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20AAD-blue.svg)](./src/infrastructure/crypto)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Security Policy](https://img.shields.io/badge/Security-Policy-red.svg)](./SECURITY.md)
 
 API de borda do **Pure Life Ministries Brasil** (`api.purelifeministriesbrasil.org`): Cloudflare Worker em TypeScript
-(Hono) com **Clean Architecture**, persistência no **Supabase Postgres** via **Drizzle ORM**, PIX dinâmico via
+(Hono) com **Clean Architecture**, persistência no **Neon Postgres** (via Cloudflare Hyperdrive) com **Drizzle ORM**, PIX dinâmico via
 **Asaas ou Mercado Pago**, criptografia de campo **AES-256-GCM + AAD** e expurgo LGPD automatizado.
 
 ---
@@ -105,7 +105,7 @@ Runbook completo de implantação nas contas institucionais:
 
 ## 6. Caixa pastoral (leitura de dados cifrados)
 
-O Table Editor do Supabase exibe apenas ciphertext. Até existir um painel dedicado, a equipe autorizada usa:
+O editor de tabelas do Neon exibe apenas ciphertext. Até existir um painel dedicado, a equipe autorizada usa:
 
 ```bash
 OPERATOR=nome@purelifeministriesbrasil.org node scripts/pastoral-inbox.mjs list
