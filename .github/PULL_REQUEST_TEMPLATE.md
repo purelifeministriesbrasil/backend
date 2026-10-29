@@ -1,20 +1,20 @@
-## Descrição da Alteração
+## Descrição
 
-Descrição da Alteração
+<!-- Objetivo da mudança e partes da API afetadas. -->
 
-Descreva sucintamente o objetivo do Pull Request e os componentes modificados na API.
+## Referências
 
-## Relações e Referências
-
-Relação com Issues / ADRs
 - Issue: #
-- ADRs Impactados: [ ] ADR-002 [ ] ADR-004 [ ] ADR-005
+- ADRs afetados: [ ] ADR-004 (criptografia) [ ] ADR-005 (idempotência) [ ] ADR-008 (Neon/Hyperdrive)
 
-## Diretrizes e Checklist
+## Checklist
 
-Checklist de Qualidade, AppSec e Governança
-- [ ] `pnpm test` passou com 100% de sucesso (incluindo testes unitários e canários).
-- [ ] `pnpm run verify:boundaries` passou sem qualquer violação de camadas de Clean Architecture.
-- [ ] `pnpm run build` compilou sem erros de TypeScript.
-- [ ] Zero dados sensíveis decifrados impressos em logs ou retornos HTTP não autorizados.
-- [ ] Nenhuma credencial ou segredo hardcoded (`.env` ou arquivos de código).
+- [ ] `pnpm verify` passou (lint, fronteiras, typecheck e testes, incluindo os canários).
+- [ ] Mudança de banco feita por migration nova em `drizzle/`, com `schema.ts` atualizado.
+- [ ] Nenhum dado sensível decifrado aparece em logs ou respostas HTTP.
+- [ ] Nenhum segredo, `.env`, `.dev.vars` ou dado real foi incluído.
+- [ ] Se `src/schemas/` mudou, a mesma mudança foi feita no `frontend`.
+
+## Implantação e rollback
+
+<!-- Precisa de migration, segredo novo ou variável? Como desfazer? -->

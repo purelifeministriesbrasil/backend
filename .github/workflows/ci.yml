@@ -55,7 +55,7 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Emulate Supabase roles (anon/authenticated)
+      - name: Create public roles (anon/authenticated) to prove they get no access
         run: psql "$DATABASE_URL" -c "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN;"
 
       - name: Apply migrations (drizzle/ is the single source of truth)

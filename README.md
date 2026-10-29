@@ -1,36 +1,49 @@
-# purelife-api — Backend Cloudflare Worker & Clean Architecture
+<h1 align="center">purelife-api</h1>
 
-[![Cloudflare Workers](https://img.shields.io/badge/Runtime-Cloudflare%20Workers-F38020.svg)](https://workers.cloudflare.com)
-[![Neon Postgres](https://img.shields.io/badge/Database-Neon%20Postgres-00E599.svg)](https://neon.tech)
-[![Drizzle ORM](https://img.shields.io/badge/ORM-Drizzle-C5F74F.svg)](https://orm.drizzle.team)
-[![Cryptography](https://img.shields.io/badge/Crypto-AES--256--GCM%20%2B%20AAD-blue.svg)](./src/infrastructure/crypto)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![Security Policy](https://img.shields.io/badge/Security-Policy-red.svg)](./SECURITY.md)
+<p align="center">
+  API do <strong>Pure Life Ministries Brasil</strong> — <code>api.purelifeministriesbrasil.org</code>
+</p>
 
-API de borda do **Pure Life Ministries Brasil** (`api.purelifeministriesbrasil.org`): Cloudflare Worker em TypeScript
-(Hono) com **Clean Architecture**, persistência no **Neon Postgres** (via Cloudflare Hyperdrive) com **Drizzle ORM**, PIX dinâmico via
-**Asaas ou Mercado Pago**, criptografia de campo **AES-256-GCM + AAD** e expurgo LGPD automatizado.
+<p align="center">
+  <a href="https://workers.cloudflare.com"><img src="https://img.shields.io/badge/Runtime-Cloudflare%20Workers-F38020.svg" alt="Cloudflare Workers" /></a>
+  <a href="https://hono.dev"><img src="https://img.shields.io/badge/HTTP-Hono-E36002.svg" alt="Hono" /></a>
+  <a href="https://neon.tech"><img src="https://img.shields.io/badge/Banco-Neon%20%2B%20Hyperdrive-00E599.svg" alt="Neon + Hyperdrive" /></a>
+  <a href="https://orm.drizzle.team"><img src="https://img.shields.io/badge/ORM-Drizzle-C5F74F.svg" alt="Drizzle ORM" /></a>
+  <a href="./src/infrastructure/crypto"><img src="https://img.shields.io/badge/Cripto-AES--256--GCM%20%2B%20AAD-blue.svg" alt="AES-256-GCM" /></a>
+  <a href="./SECURITY.md"><img src="https://img.shields.io/badge/Seguran%C3%A7a-pol%C3%ADtica-red.svg" alt="Política de segurança" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/Licen%C3%A7a-MIT-blue.svg" alt="Licença MIT" /></a>
+</p>
 
 ---
 
-## 1. Princípios
+## Sumário
 
-1. **Fonte única de verdade do banco**: `drizzle/*.sql`, aplicadas em ordem por `pnpm db:migrate`.
-   `src/infrastructure/db/schema.ts` espelha o SQL coluna a coluna (nomes de constraints inclusive).
-2. **Fail-closed**: cada funcionalidade valida sua configuração por requisição. Segredo ausente ou inválido
-   (chave AES ≠ 32 bytes, chave de teste do Turnstile em produção, provedor PIX incompleto) → `503`, com log
-   contendo apenas os **nomes** das chaves.
-3. **Clean Architecture verificada**: `pnpm lint` roda ESLint (typescript-eslint) e
-   `scripts/verify-boundaries.mjs`, que resolve o caminho real de cada import e bloqueia dependências proibidas
-   entre `domains/`, `application/`, `infrastructure/`, `presentation/` e `schemas/`.
-4. **Criptografia de campo (ADR-004)**: contato, relato, mensagens e e-mails são cifrados com AES-256-GCM; o AAD
-   amarra `entidade:id:campo:versão`. IV aleatório de 96 bits por operação. E-mails usados para deduplicação são
-   guardados como HMAC-SHA256 com pepper (`HASH_PEPPER`), nunca em claro.
-5. **Idempotência ponta a ponta**: formulários e doações exigem o header `Idempotency-Key` (UUID v4); webhooks
-   usam o modelo de *lease* de 60 s com no máximo 5 tentativas (ADR-005).
-6. **Máquina de estados de cobrança**: uma doação `confirmed` nunca regride para `pending`, `failed` ou `expired`;
-   eventos fora de ordem são ignorados e auditados em `audit_events`.
-7. **LGPD**: Cron diário (`0 3 * * *`) nulifica triagens e contatos com 180 dias de retenção vencidos.
+1. [Visão geral](#1-visão-geral)
+2. [Endpoints](#2-endpoints)
+3. [Início rápido](#3-início-rápido)
+4. [Estrutura do repositório](#4-estrutura-do-repositório)
+5. [Configuração](#5-configuração)
+6. [Banco de dados](#6-banco-de-dados)
+7. [Caixa pastoral](#7-caixa-pastoral)
+8. [Publicação](#8-publicação)
+9. [Governança](#9-governança)
+
+---
+
+## 1. Visão geral
+
+Cloudflare Worker em TypeScript (**Hono**) organizado em **Clean Architecture**. Recebe a triagem, o contato,
+a newsletter e as doações PIX do site; grava no **Neon Postgres** (São Paulo) por meio do **Cloudflare
+Hyperdrive**, com **Drizzle ORM**.
+
+| Princípio | Como é garantido |
+|---|---|
+| **Sigilo** | Contato, relato e e-mails cifrados com AES-256-GCM; o AAD amarra `entidade:id:campo:versão`. E-mails de deduplicação viram HMAC-SHA256 com *pepper*. |
+| **Fail-closed** | Configuração validada por requisição; segredo ausente ou inválido → `503`, com log só dos **nomes** das variáveis. |
+| **Idempotência** | `Idempotency-Key` (UUID v4) em formulários e doações; *lease* de 60 s (até 5 tentativas) nos webhooks (ADR-005). |
+| **Doação nunca regride** | Máquina de estados: uma cobrança `confirmed` não volta a `pending`, `failed` ou `expired`. |
+| **LGPD** | Cron diário (`0 3 * * *`) anula triagens e contatos com 180 dias de retenção vencidos. |
+| **Arquitetura verificada** | `scripts/verify-boundaries.mjs` bloqueia imports proibidos entre camadas. |
 
 ---
 
@@ -38,52 +51,83 @@ API de borda do **Pure Life Ministries Brasil** (`api.purelifeministriesbrasil.o
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET` | `/health` | Liveness probe |
+| `GET` | `/health` | Verificação de disponibilidade (não toca no banco) |
 | `POST` | `/api/forms/triagem` | Triagem confidencial (Turnstile + `Idempotency-Key`) |
 | `POST` | `/api/forms/contato` | Contato institucional (Turnstile + `Idempotency-Key`) |
-| `POST` | `/api/forms/newsletter` | Inscrição com double opt-in (JSON ou form POST sem JS) |
-| `POST` | `/api/forms/newsletter/confirm` | Confirmação a partir da página `/newsletter/confirmar/` |
+| `POST` | `/api/forms/newsletter` | Inscrição com confirmação dupla (JSON ou formulário sem JavaScript) |
+| `POST` | `/api/forms/newsletter/confirm` | Confirmação a partir de `/newsletter/confirmar/` |
 | `POST` | `/api/donations/create-pix` | Cria cobrança PIX no provedor ativo (`PAYMENT_PROVIDER`) |
-| `POST` | `/api/webhooks/payment` | Webhook do provedor ativo (token Asaas ou HMAC Mercado Pago) |
+| `POST` | `/api/webhooks/payment` | Webhook do provedor (token do Asaas ou HMAC do Mercado Pago) |
+
+Contratos detalhados: [Contratos de Dados](https://purelifeministriesbrasil.github.io/documentation/schemas/triage-schema/).
 
 ---
 
-## 3. Estrutura
+## 3. Início rápido
 
-```
-backend/
-├── drizzle/                      # Migrations SQL versionadas (fonte única de verdade)
-├── scripts/
-│   ├── migrate.mjs               # Aplica drizzle/*.sql com checksum em schema_migrations
-│   ├── pastoral-inbox.mjs        # Caixa pastoral: decifra localmente e audita cada leitura
-│   └── verify-boundaries.mjs     # Linter de fronteiras da Clean Architecture
-├── src/
-│   ├── domains/                  # Regras puras (máquina de estados de cobrança)
-│   ├── application/              # Portas e casos de uso (triagem, contato, newsletter, PIX, webhook, expurgo)
-│   ├── infrastructure/           # Config, cripto, Drizzle, Resend, Asaas, Mercado Pago, Turnstile, logs
-│   ├── presentation/             # Handlers HTTP e cron
-│   ├── schemas/                  # Contratos Zod — cópia idêntica em frontend/src/schemas
-│   └── index.ts                  # Composition root (Hono + scheduled)
-└── tests/                        # Vitest: unitários, AppSec e integração com Postgres real
-```
-
----
-
-## 4. Comandos
+Pré-requisitos: **Node 22** e **pnpm**.
 
 ```bash
 pnpm install
-pnpm dev                 # wrangler dev (lê .dev.vars)
-pnpm lint                # ESLint + fronteiras
-pnpm typecheck           # tsc --noEmit
-pnpm test                # Vitest (integração com banco roda se TEST_DATABASE_URL estiver definido)
-pnpm verify              # lint + typecheck + test (validação completa)
-pnpm db:migrate          # aplica drizzle/*.sql em DATABASE_URL
-pnpm db:migrate:dry-run  # lista migrations pendentes
-pnpm deploy              # wrangler deploy
+cp .dev.vars.example .dev.vars   # variáveis do Worker local (documenta todas)
+cp .env.example .env             # scripts Node: migrations e caixa pastoral
+pnpm dev                         # http://localhost:8787
 ```
 
-Testes de integração (Postgres descartável — as tabelas são truncadas):
+| Comando | O que faz |
+|---|---|
+| `pnpm dev` | `wrangler dev` com `.dev.vars` |
+| `pnpm verify` | Validação completa: lint + fronteiras + typecheck + testes |
+| `pnpm lint` | ESLint + `verify-boundaries` |
+| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm test` | Vitest (os testes com banco real rodam só com `TEST_DATABASE_URL`) |
+| `pnpm db:migrate` / `pnpm db:migrate:dry-run` | Aplica / lista as migrations de `drizzle/` em `DATABASE_URL` |
+| `pnpm deploy` | `wrangler deploy` |
+
+---
+
+## 4. Estrutura do repositório
+
+```
+backend/
+├── drizzle/              # Migrations SQL (fonte única de verdade do banco)     → drizzle/README.md
+├── scripts/              # Migrations, caixa pastoral e verificação de camadas   → scripts/README.md
+├── src/                  # Código do Worker, por camada                          → src/README.md
+│   ├── domains/          # Regras puras (máquina de estados da cobrança)
+│   ├── application/      # Casos de uso e portas (interfaces)
+│   ├── infrastructure/   # Banco, cripto, e-mail, gateways, Turnstile, logs
+│   ├── presentation/     # Handlers HTTP e cron
+│   ├── schemas/          # Contratos zod/mini — idênticos ao frontend            → src/schemas/README.md
+│   └── index.ts          # Composition root (rotas Hono + scheduled)
+├── tests/                # Vitest: unidade, AppSec e integração com Postgres    → tests/README.md
+├── wrangler.toml         # Worker de produção (rota, vars, Hyperdrive, cron)
+└── .github/              # CI, modelos de issue e de pull request
+```
+
+---
+
+## 5. Configuração
+
+| Onde | O quê |
+|---|---|
+| `wrangler.toml` → `[vars]` | Valores não secretos de produção (origem do site, provedor PIX, remetente de e-mail) |
+| `wrangler secret put` | `DATABASE_URL`, `TRIAGE_KEY_V1`, `HASH_PEPPER`, `TURNSTILE_SECRET_KEY`, `RESEND_API_KEY` e, se o PIX dinâmico for ligado, `ASAAS_*` ou `MERCADOPAGO_*` |
+| `[[hyperdrive]]` | Binding `HYPERDRIVE` (conexão com o Neon); `DATABASE_URL` fica como reserva |
+| `.dev.vars` | Desenvolvimento local (fora do Git) |
+| `.env` | Scripts Node: conexão **direta** do Neon e `OPERATOR` (fora do Git) |
+
+Nenhum segredo é versionado. Rotação: [Rotação de Chaves](https://purelifeministriesbrasil.github.io/documentation/operations/key-rotation/).
+
+---
+
+## 6. Banco de dados
+
+```bash
+pnpm db:migrate:dry-run   # mostra o que falta aplicar
+pnpm db:migrate           # aplica em DATABASE_URL (use a conexão direta do Neon)
+```
+
+Testes de integração em um Postgres **descartável** (as tabelas são truncadas):
 
 ```bash
 DATABASE_URL=postgresql://postgres@127.0.0.1:5432/postgres pnpm db:migrate
@@ -92,31 +136,35 @@ TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/postgres pnpm test
 
 ---
 
-## 5. Configuração
+## 7. Caixa pastoral
 
-- Desenvolvimento: copie `.dev.vars.example` para `.dev.vars` (documenta **todas** as variáveis).
-- Produção: variáveis não secretas em `[vars]` do `wrangler.toml`; segredos com `wrangler secret put`.
-- Scripts Node (migrations, caixa pastoral): veja `.env.example`.
-
-Runbook completo de implantação nas contas institucionais:
-[documentação → Operações → Deploy](https://purelifeministriesbrasil.github.io/documentation/operations/deployment/).
-
----
-
-## 6. Caixa pastoral (leitura de dados cifrados)
-
-O editor de tabelas do Neon exibe apenas ciphertext. Até existir um painel dedicado, a equipe autorizada usa:
+O editor de tabelas do Neon mostra apenas texto cifrado. A equipe autorizada lê as triagens pela CLI, que
+decifra **localmente** e registra cada leitura em `audit_events` (quem, quando e por quê):
 
 ```bash
-OPERATOR=nome@purelifeministriesbrasil.org node scripts/pastoral-inbox.mjs list
-OPERATOR=nome@purelifeministriesbrasil.org node scripts/pastoral-inbox.mjs show PLM-XXXX-XXXX --reason "primeiro contato" --include-report
-OPERATOR=nome@purelifeministriesbrasil.org node scripts/pastoral-inbox.mjs set-status PLM-XXXX-XXXX contacted
+node --env-file=.env scripts/pastoral-inbox.mjs list
+node --env-file=.env scripts/pastoral-inbox.mjs show PLM-XXXX-XXXX --reason "primeiro contato" --include-report
+node --env-file=.env scripts/pastoral-inbox.mjs set-status PLM-XXXX-XXXX contacted
 ```
 
-Cada leitura grava `audit_events` (quem, quando, motivo). Execute somente em máquina confiável.
+Execute somente em computador confiável; o `.env` precisa de `DATABASE_URL`, `OPERATOR` e das chaves
+`TRIAGE_KEY_Vn`.
 
 ---
 
-## 7. Governança
+## 8. Publicação
 
-- [Código de Conduta](CODE_OF_CONDUCT.md) · [Contribuição](CONTRIBUTING.md) · [Segurança e LGPD](SECURITY.md) · [Licença MIT](LICENSE)
+```bash
+pnpm verify && pnpm deploy
+```
+
+Antes da virada do domínio, a API roda em `purelife-api.purelifeministriesbrasil1986.workers.dev`, publicada com
+um `wrangler.workersdev.toml` local (fora do Git). Runbook completo:
+[Implantação](https://purelifeministriesbrasil.github.io/documentation/operations/deployment/).
+
+---
+
+## 9. Governança
+
+[Contribuição](CONTRIBUTING.md) · [Segurança e LGPD](SECURITY.md) · [Código de Conduta](CODE_OF_CONDUCT.md) ·
+[Licença MIT](LICENSE) · [Documentação técnica](https://purelifeministriesbrasil.github.io/documentation/)
