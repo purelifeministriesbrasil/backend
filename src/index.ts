@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
+import { createMiddleware } from "hono/factory";
 import { secureHeaders } from "hono/secure-headers";
 import { handleHealth } from "./presentation/health.js";
 import { handleTriageSubmission } from "./presentation/forms/triagem.js";
@@ -8,7 +9,7 @@ import { handleNewsletterConfirmation, handleNewsletterSubscription } from "./pr
 import { handleCreatePix } from "./presentation/donations/create-pix.js";
 import { handlePaymentWebhook } from "./presentation/webhooks/payment.js";
 import { handleScheduledPurge } from "./presentation/cron/purge.js";
-import { serviceUnavailable, internalError, type TurnstileVerifier } from "./presentation/http.js";
+import { clientIp, serviceUnavailable, internalError, type TurnstileVerifier } from "./presentation/http.js";
 import {
   ConfigError,
   isProduction,
@@ -27,6 +28,7 @@ import { createDrizzleContactRepository } from "./infrastructure/db/contact-repo
 import { createDrizzleNewsletterRepository } from "./infrastructure/db/newsletter-repository.js";
 import { createDrizzleChargeRepository, createDrizzleDonationRepository } from "./infrastructure/db/donation-repository.js";
 import { createIdempotencyRepository } from "./infrastructure/db/idempotency.js";
+import { RATE_LIMIT_RETRY_AFTER_SECONDS, readRateLimitMode, shouldBlock } from "./infrastructure/security/rate-limit.js";
 import { createDrizzlePurgeRepository } from "./infrastructure/db/purge-repository.js";
 import { createResendNotifier } from "./infrastructure/email/resend.js";
 import { createPaymentGateway } from "./infrastructure/payments/factory.js";
@@ -151,6 +153,29 @@ export function createApp(options: AppOptions = {}) {
       maxAge: 86400,
     })(c, next)
   );
+
+  // Limitação por IP e endpoint (R5). Só POST; preflight CORS e webhooks de pagamento nunca são limitados.
+  const rateLimited = (endpoint: string, bindingName: "RL_CONTACT" | "RL_TRIAGE" | "RL_NEWSLETTER" | "RL_DONATION") =>
+    createMiddleware<AppEnv>(async (c, next) => {
+      const blocked = await shouldBlock({
+        binding: c.env[bindingName],
+        endpoint,
+        mode: readRateLimitMode(c.env),
+        ip: clientIp(c.req.raw),
+      });
+      if (blocked) {
+        return c.json(
+          { error: "rate_limited", message: "Muitas tentativas em pouco tempo. Aguarde um minuto e tente novamente." },
+          429,
+          { "Retry-After": String(RATE_LIMIT_RETRY_AFTER_SECONDS), "Cache-Control": "no-store" }
+        );
+      }
+      await next();
+    });
+  app.post("/api/forms/contato", rateLimited("contato", "RL_CONTACT"));
+  app.post("/api/forms/triagem", rateLimited("triagem", "RL_TRIAGE"));
+  app.post("/api/forms/newsletter", rateLimited("newsletter", "RL_NEWSLETTER"));
+  app.post("/api/donations/create-pix", rateLimited("create-pix", "RL_DONATION"));
 
   app.get("/health", () => handleHealth());
 

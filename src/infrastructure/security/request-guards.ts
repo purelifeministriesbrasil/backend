@@ -53,12 +53,20 @@ export function guardRequest(
     return deny(413);
   }
 
+  // Exige ao menos um sinal de contexto de navegação (Origin ou Sec-Fetch-Site) e que todo sinal presente
+  // seja válido. Navegadores sempre enviam Origin em POST, inclusive de formulário sem JavaScript;
+  // requisição sem nenhum dos dois não vem de uma página do site. (Webhooks não passam por este guard.)
   const origin = request.headers.get("Origin");
+  const fetchSite = request.headers.get("Sec-Fetch-Site");
+
+  if (!origin && !fetchSite) {
+    return deny(403);
+  }
+
   if (origin && origin !== publicSiteOrigin) {
     return deny(403);
   }
 
-  const fetchSite = request.headers.get("Sec-Fetch-Site");
   if (fetchSite && !["same-origin", "same-site"].includes(fetchSite)) {
     return deny(403);
   }
