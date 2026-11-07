@@ -202,4 +202,28 @@ describe.skipIf(!url)("Repositórios Drizzle contra PostgreSQL real", () => {
       await other.close();
     }
   });
+
+  it("withCreationLock: transação ociosa além do teto é encerrada pelo Postgres e o bloqueio é liberado", async () => {
+    const other = createDbClient(url as string);
+    try {
+      const a = createDrizzleDonationRepository(handle.db, enc, hashEmail, { idleInTransactionTimeoutMs: 300 });
+      const b = createDrizzleDonationRepository(other.db, enc, hashEmail, { lockTimeoutMs: 5000 });
+      const intent = crypto.randomUUID();
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+      // Simula o Worker travado no gateway sob o bloqueio: nenhum comando SQL por mais tempo que o teto.
+      const stuck = a.withCreationLock(intent, async () => {
+        await sleep(1200);
+      });
+      await sleep(80);
+      const started = Date.now();
+      const waiter = b.withCreationLock(intent, async () => "acquired");
+
+      await expect(waiter).resolves.toBe("acquired");
+      expect(Date.now() - started).toBeLessThan(1500); // liberou pelo teto, não pelo fim do `work` travado
+      await expect(stuck).rejects.toThrow();
+    } finally {
+      await other.close();
+    }
+  });
 });

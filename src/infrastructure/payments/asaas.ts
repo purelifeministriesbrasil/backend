@@ -32,6 +32,9 @@ const EVENT_MAP: Record<string, PaymentEventType> = {
 
 type GatewayFailure = { ok: false; kind: "infrastructure"; error: "gateway_rejected" | "gateway_unavailable"; retryable: boolean };
 
+/** Tempo máximo gasto antes de criar a cobrança (listar/cancelar), para limitar quanto a transação fica aberta. */
+const PRE_CREATE_BUDGET_MS = 20_000;
+
 const unavailable: GatewayFailure = { ok: false, kind: "infrastructure", error: "gateway_unavailable", retryable: true };
 const rejected: GatewayFailure = { ok: false, kind: "infrastructure", error: "gateway_rejected", retryable: false };
 
@@ -106,12 +109,17 @@ export function createAsaasGateway(config: AsaasConfig, timeoutMs = 10_000): Pay
     }
 
     const reusable: { id: string; dateCreated: string }[] = [];
+    const stale: string[] = []; // vencidas ou com QR expirado: precisam ser canceladas antes de criar outra
     for (const item of listed.body.data) {
       if (!isRecord(item) || typeof item.id !== "string") {
         log("warn", "asaas.reconcile_blocked", { reason: "malformed_item" });
         return rejected;
       }
-      if (item.deleted === true || item.status === "OVERDUE") continue; // removida ou vencida: não reutilizar
+      if (item.deleted === true) continue; // já removida
+      if (item.status === "OVERDUE") {
+        stale.push(item.id); // vencida: o QR pode continuar pagável, então não basta ignorá-la
+        continue;
+      }
       const sameAmount = typeof item.value === "number" && Math.round(item.value * 100) === input.amountCents;
       if (item.status === "PENDING" && item.billingType === "PIX" && sameAmount) {
         reusable.push({ id: item.id, dateCreated: typeof item.dateCreated === "string" ? item.dateCreated : "" });
@@ -128,9 +136,25 @@ export function createAsaasGateway(config: AsaasConfig, timeoutMs = 10_000): Pay
     for (const candidate of reusable) {
       const qr = await fetchQr(candidate.id, now, { requireExpiration: true });
       if (!qr.ok) return qr;
-      if (new Date(qr.value.expiresAt).getTime() <= now.getTime()) continue; // QR expirado: não reutilizar
+      if (new Date(qr.value.expiresAt).getTime() <= now.getTime()) {
+        stale.push(candidate.id); // QR expirado: não reutilizar
+        continue;
+      }
       log("info", "asaas.charge_reused", { reconciled: true });
       return qr;
+    }
+
+    // Nada aproveitável. Antes de criar outra, cancela as obsoletas: uma cobrança vencida pode manter o QR
+    // pagável, e um pagamento tardio dela chegaria por webhook sem registro local. Se o Asaas recusar o
+    // cancelamento (por exemplo, porque foi paga agora), NÃO cria outra: sinaliza para conciliação manual.
+    for (const id of stale) {
+      const removed = await call(`/payments/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!removed || removed.status >= 500) return unavailable;
+      if (removed.status >= 400 || !isRecord(removed.body) || removed.body.deleted !== true) {
+        log("warn", "asaas.reconcile_blocked", { reason: "stale_payment_not_cancellable", status: removed.status });
+        return rejected;
+      }
+      log("info", "asaas.stale_charge_cancelled", { reconciled: true });
     }
     return null;
   }
@@ -146,6 +170,13 @@ export function createAsaasGateway(config: AsaasConfig, timeoutMs = 10_000): Pay
       //    falhou, é localizada por `externalReference` (id estável da intenção).
       const found = await findExisting(input, now);
       if (found) return found; // cobrança reaproveitada (ok) ou falha/bloqueio da conciliação
+
+      // Orçamento de tempo: esta chamada roda sob o bloqueio da intenção (transação aberta no banco).
+      // Se a conciliação já consumiu o orçamento, desiste ANTES de criar (nada remoto foi deixado).
+      if (Date.now() - now.getTime() > PRE_CREATE_BUDGET_MS) {
+        log("warn", "asaas.pre_create_budget_exceeded", {});
+        return unavailable;
+      }
 
       // 2) Nenhuma cobrança aproveitável: cria. Falhas aqui (antes do id remoto) não deixam cobrança.
       const created = await call("/payments", {

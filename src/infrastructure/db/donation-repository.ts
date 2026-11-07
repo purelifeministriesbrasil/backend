@@ -25,11 +25,24 @@ function toStoredCharge(row: ChargeRow): StoredCharge {
   };
 }
 
+export interface CreationLockOptions {
+  /** Quanto tempo uma requisição espera pelo bloqueio da intenção (padrão 15 s). */
+  lockTimeoutMs?: number;
+  /**
+   * Teto para a transação ficar ociosa (as chamadas ao gateway acontecem sob o bloqueio, sem comandos SQL).
+   * Se o Worker morrer no meio, o Postgres encerra a sessão e libera o bloqueio e a conexão (padrão 60 s).
+   */
+  idleInTransactionTimeoutMs?: number;
+}
+
 export function createDrizzleDonationRepository(
   db: Pick<Database, "select" | "insert" | "transaction" | "execute">,
   enc: EncryptionProvider,
-  hashEmail: KeyedHasher
+  hashEmail: KeyedHasher,
+  lock: CreationLockOptions = {}
 ): DonationRepository {
+  const lockTimeoutMs = Math.floor(lock.lockTimeoutMs ?? 15_000);
+  const idleInTxMs = Math.floor(lock.idleInTransactionTimeoutMs ?? 60_000);
   async function firstCharge(intentId: string): Promise<StoredCharge | null> {
     const [row] = await db
       .select()
@@ -87,9 +100,10 @@ export function createDrizzleDonationRepository(
     async withCreationLock(intentId, work) {
       return db.transaction(async (tx) => {
         // Bloqueio consultivo da transação, liberado no commit/rollback. O timeout evita espera indefinida.
-        await tx.execute(sql`SET LOCAL lock_timeout = '15s'`);
+        await tx.execute(sql.raw(`SET LOCAL lock_timeout = ${lockTimeoutMs}`));
+        await tx.execute(sql.raw(`SET LOCAL idle_in_transaction_session_timeout = ${idleInTxMs}`));
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`donation_intent:${intentId}`}, 0))`);
-        return work(createDrizzleDonationRepository(tx, enc, hashEmail));
+        return work(createDrizzleDonationRepository(tx, enc, hashEmail, lock));
       });
     },
 

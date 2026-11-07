@@ -84,9 +84,10 @@ describe("Asaas gateway", () => {
     });
 
     /** Roteia: lista, criação (POST) e QR por id. */
-    function scenario(list: Response | (() => Response), qr: Record<string, Response> = {}) {
+    function scenario(list: Response | (() => Response), qr: Record<string, Response> = {}, del: () => Response = () => jsonRes(200, { deleted: true, id: "x" })) {
       return stubFetch((url, init) => {
         if (init.method === "GET" && url.includes("/payments?")) return typeof list === "function" ? list() : list;
+        if (init.method === "DELETE") return del();
         if (init.method === "POST") return jsonRes(200, { id: "pay_new" });
         const id = url.split("/payments/")[1].split("/")[0];
         return qr[id] ?? jsonRes(200, { payload: `PIX-${id}`, expirationDate: future });
@@ -101,18 +102,36 @@ describe("Asaas gateway", () => {
       expect(posts(calls)).toHaveLength(0);
     });
 
-    it("cria nova cobrança quando a existente foi removida, está vencida ou tem QR expirado", async () => {
-      for (const list of [
-        [pending({ deleted: true })],
-        [pending({ status: "OVERDUE" })],
-        [pending({ id: "pay_exp" })],
-      ]) {
+    it("cria nova cobrança sem cancelar nada quando a existente já estava removida", async () => {
+      const calls = scenario(jsonRes(200, { data: [pending({ deleted: true })], hasMore: false }));
+      const result = await createAsaasGateway(config).createPix(input);
+      expect(result.ok && result.value.providerChargeId).toBe("pay_new");
+      expect(calls.filter((c) => c.init.method === "DELETE")).toHaveLength(0);
+      expect(posts(calls)).toHaveLength(1);
+    });
+
+    it("cancela a cobrança vencida (OVERDUE) ou com QR expirado ANTES de criar outra", async () => {
+      for (const list of [[pending({ status: "OVERDUE", id: "pay_over" })], [pending({ id: "pay_exp" })]]) {
         const calls = scenario(jsonRes(200, { data: list, hasMore: false }), {
           pay_exp: jsonRes(200, { payload: "OLD", expirationDate: past }),
         });
         const result = await createAsaasGateway(config).createPix(input);
         expect(result.ok && result.value.providerChargeId).toBe("pay_new");
-        expect(posts(calls)).toHaveLength(1);
+        const methods = calls.map((c) => c.init.method);
+        const del = methods.indexOf("DELETE");
+        expect(del).toBeGreaterThan(-1);
+        expect(del).toBeLessThan(methods.indexOf("POST")); // cancelou antes de criar
+        expect(calls[del].url).toMatch(/\/payments\/pay_(over|exp)$/);
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("se o Asaas não cancelar a cobrança obsoleta (ex.: acabou de ser paga), não cria outra", async () => {
+      for (const del of [() => jsonRes(400, { errors: [{ code: "invalid_action" }] }), () => jsonRes(200, { deleted: false }), () => jsonRes(503, {})]) {
+        const calls = scenario(jsonRes(200, { data: [pending({ status: "OVERDUE" })], hasMore: false }), {}, del);
+        const result = await createAsaasGateway(config).createPix(input);
+        expect(result.ok).toBe(false);
+        expect(posts(calls)).toHaveLength(0);
         vi.unstubAllGlobals();
       }
     });
