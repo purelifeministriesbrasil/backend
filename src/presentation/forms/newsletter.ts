@@ -8,6 +8,7 @@ import {
 import {
   confirmNewsletter,
   subscribeNewsletter,
+  unsubscribeNewsletter,
   type SubscribeNewsletterDeps,
 } from "../../application/usecases/subscribe-newsletter.js";
 import { clientIp, json, readJson, serviceUnavailable, type TurnstileVerifier } from "../http.js";
@@ -104,4 +105,30 @@ export async function handleNewsletterConfirmation(
     return json(410, { error: "token_expired", message: "Este link expirou ou já foi utilizado." });
   }
   return json(200, { ok: true, message: "Inscrição confirmada. Obrigado!" });
+}
+
+const UNSUBSCRIBE_NEUTRAL_MESSAGE = "Pedido processado. Se o endereço estava inscrito, ele não receberá mais mensagens.";
+
+/**
+ * Descadastro via POST explícito disparado pela página /newsletter/cancelar/ (token no fragmento da URL).
+ * Um GET nunca altera o estado. Resposta neutra e idempotente: token desconhecido, expirado ou já usado
+ * recebe a mesma resposta de sucesso. Token e e-mail nunca são registrados em log.
+ */
+export async function handleNewsletterUnsubscribe(
+  request: Request,
+  env: { PUBLIC_SITE_ORIGIN: string },
+  deps: { newsletter: () => Pick<SubscribeNewsletterDeps, "repo" | "tokens"> }
+): Promise<Response> {
+  const guard = guardRequest(request, env.PUBLIC_SITE_ORIGIN, { maxBytes: 256, accept: ["application/json"] });
+  if (guard) return guard;
+
+  const read = await readJson(request, 256);
+  if (read instanceof Response) return read;
+
+  const parsed = confirmSchema.safeParse(read.body);
+  if (!parsed.success) return json(400, { error: "invalid_token", message: "Link de descadastro inválido." });
+
+  const result = await unsubscribeNewsletter(parsed.data.token, deps.newsletter());
+  if (!result.ok) return serviceUnavailable();
+  return json(200, { ok: true, message: UNSUBSCRIBE_NEUTRAL_MESSAGE });
 }
