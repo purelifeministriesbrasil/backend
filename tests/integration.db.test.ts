@@ -12,6 +12,7 @@ import { createDrizzleChargeRepository, createDrizzleDonationRepository } from "
 import { createIdempotencyRepository } from "../src/infrastructure/db/idempotency.js";
 import { createDrizzlePurgeRepository } from "../src/infrastructure/db/purge-repository.js";
 import { handleScheduledPurge } from "../src/presentation/cron/purge.js";
+import { createDrizzlePurgeAlertLog } from "../src/infrastructure/db/purge-alert-log.js";
 import { randomKeyB64 } from "./helpers.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -161,5 +162,19 @@ describe.skipIf(!url)("Repositórios Drizzle contra PostgreSQL real", () => {
     expect(contact).toEqual({ status: "purged", message_ciphertext: null });
 
     expect(await handleScheduledPurge(createDrizzlePurgeRepository(handle.db))).toEqual({ triagePurged: 0, contactsPurged: 0 });
+  });
+
+  it("purge alert log records alerts in audit_events and only matches the same step inside the window", async () => {
+    const log = createDrizzlePurgeAlertLog(handle.db);
+    const now = new Date();
+    expect(await log.hasAlertSince("triage", new Date(now.getTime() - 86_400_000))).toBe(false);
+
+    await log.recordAlert("triage", "ref12345", now);
+    expect(await log.hasAlertSince("triage", new Date(now.getTime() - 86_400_000))).toBe(true);
+    expect(await log.hasAlertSince("contacts", new Date(now.getTime() - 86_400_000))).toBe(false);
+    expect(await log.hasAlertSince("triage", new Date(now.getTime() + 1000))).toBe(false);
+
+    const row = (await handle.db.execute(sql`SELECT actor, action, entity_type, entity_id, metadata FROM audit_events`))[0];
+    expect(row).toEqual({ actor: "system", action: "purge.alert_sent", entity_type: "purge", entity_id: null, metadata: { step: "triage", reference: "ref12345" } });
   });
 });
