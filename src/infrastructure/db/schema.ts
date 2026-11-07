@@ -239,11 +239,16 @@ export const newsletterSubscriptions = pgTable(
     policyVersion: text("policy_version"),
     consentedAt: timestamp("consented_at", { withTimezone: true }),
     confirmSentAt: timestamp("confirm_sent_at", { withTimezone: true }),
+    unsubscribeTokenHash: text("unsubscribe_token_hash"),
+    unsubscribeExpiresAt: timestamp("unsubscribe_expires_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("news_confirm_token_unq")
       .on(table.confirmTokenHash)
       .where(sql`${table.confirmTokenHash} IS NOT NULL`),
+    uniqueIndex("news_unsubscribe_token_unq")
+      .on(table.unsubscribeTokenHash)
+      .where(sql`${table.unsubscribeTokenHash} IS NOT NULL`),
     check(
       "news_status_chk",
       sql`${table.status} IN ('pending','confirmed','unsubscribed','bounced','suppressed')`

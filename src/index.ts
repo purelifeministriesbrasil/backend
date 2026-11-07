@@ -4,7 +4,11 @@ import { secureHeaders } from "hono/secure-headers";
 import { handleHealth } from "./presentation/health.js";
 import { handleTriageSubmission } from "./presentation/forms/triagem.js";
 import { handleContactSubmission } from "./presentation/forms/contato.js";
-import { handleNewsletterConfirmation, handleNewsletterSubscription } from "./presentation/forms/newsletter.js";
+import {
+  handleNewsletterConfirmation,
+  handleNewsletterSubscription,
+  handleNewsletterUnsubscribe,
+} from "./presentation/forms/newsletter.js";
 import { handleCreatePix } from "./presentation/donations/create-pix.js";
 import { handlePaymentWebhook } from "./presentation/webhooks/payment.js";
 import { handleScheduledPurge } from "./presentation/cron/purge.js";
@@ -193,6 +197,7 @@ export function createApp(options: AppOptions = {}) {
         notifier: createResendNotifier(emailConfig),
         tokens: { generate: randomToken, hash: sha256Hex },
         confirmUrl: (token) => `${origin}/newsletter/confirmar/#token=${token}`,
+        unsubscribeUrl: (token) => `${origin}/newsletter/cancelar/#token=${token}`,
       }),
     });
   });
@@ -201,6 +206,17 @@ export function createApp(options: AppOptions = {}) {
     const s = c.get("services");
     s.assertStorageConfigured();
     return handleNewsletterConfirmation(c.req.raw, c.env, {
+      newsletter: () => ({
+        repo: createDrizzleNewsletterRepository(s.db, s.enc, s.hashEmail),
+        tokens: { generate: randomToken, hash: sha256Hex },
+      }),
+    });
+  });
+
+  app.post("/api/forms/newsletter/unsubscribe", (c) => {
+    const s = c.get("services");
+    s.assertStorageConfigured();
+    return handleNewsletterUnsubscribe(c.req.raw, c.env, {
       newsletter: () => ({
         repo: createDrizzleNewsletterRepository(s.db, s.enc, s.hashEmail),
         tokens: { generate: randomToken, hash: sha256Hex },
