@@ -1,0 +1,38 @@
+name: Schema sync
+
+# Verifica que src/schemas é idêntico no frontend e no backend.
+# Em pull_request só avisa (a mudança precisa ser feita nos dois repositórios); na main e no agendamento semanal falha.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 12 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  schema-sync:
+    name: src/schemas idêntico ao do frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deste repositório
+        uses: actions/checkout@v4
+
+      - name: Checkout do repositório frontend (main)
+        uses: actions/checkout@v4
+        with:
+          repository: purelifeministriesbrasil/frontend
+          ref: main
+          path: .other-repo
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Comparar src/schemas
+        run: node scripts/verify-schema-sync.mjs .other-repo ${{ github.event_name == 'pull_request' && '--warn-only' || '' }}
