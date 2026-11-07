@@ -31,10 +31,12 @@ describe("Asaas gateway", () => {
   };
 
   it("creates a PIX charge for the institutional customer and fetches the copy-paste payload", async () => {
-    const calls = stubFetch((url) =>
-      url.endsWith("/payments")
-        ? jsonRes(200, { id: "pay_abc" })
-        : jsonRes(200, { encodedImage: "iVBOR...", payload: "000201PIX", expirationDate: "2026-10-14 23:59:59" })
+    const calls = stubFetch((url, init) =>
+      init.method === "GET" && url.includes("/payments?")
+        ? jsonRes(200, { data: [], hasMore: false })
+        : url.endsWith("/payments")
+          ? jsonRes(200, { id: "pay_abc" })
+          : jsonRes(200, { encodedImage: "iVBOR...", payload: "000201PIX", expirationDate: "2026-10-14 23:59:59" })
     );
 
     const result = await createAsaasGateway(config).createPix({
@@ -48,16 +50,21 @@ describe("Asaas gateway", () => {
       ok: true,
       value: { providerChargeId: "pay_abc", pixCopyPaste: "000201PIX", expiresAt: "2026-10-15T02:59:59.000Z" },
     });
-    expect(calls[0].url).toBe("https://api-sandbox.asaas.com/v3/payments");
-    expect((calls[0].init.headers as Record<string, string>).access_token).toBe("asaas_key");
-    const sent = JSON.parse(String(calls[0].init.body));
+    expect(calls[0].url).toBe("https://api-sandbox.asaas.com/v3/payments?externalReference=intent-1&billingType=PIX&limit=100");
+    expect(calls[0].init.method).toBe("GET");
+    expect(calls[1].url).toBe("https://api-sandbox.asaas.com/v3/payments");
+    expect((calls[1].init.headers as Record<string, string>).access_token).toBe("asaas_key");
+    const sent = JSON.parse(String(calls[1].init.body));
     expect(sent).toMatchObject({ customer: "cus_123", billingType: "PIX", value: 50, externalReference: "intent-1" });
     expect(sent.dueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(calls[1].url).toBe("https://api-sandbox.asaas.com/v3/payments/pay_abc/pixQrCode");
+    expect(calls[2].url).toBe("https://api-sandbox.asaas.com/v3/payments/pay_abc/pixQrCode");
+    expect((calls[1].init.headers as Record<string, string>)["Idempotency-Key"]).toBeUndefined();
   });
 
   it("maps 4xx to gateway_rejected and network failures to gateway_unavailable", async () => {
-    stubFetch(() => jsonRes(400, { errors: [{ code: "invalid_customer" }] }));
+    stubFetch((_url, init) =>
+      init.method === "GET" ? jsonRes(200, { data: [], hasMore: false }) : jsonRes(400, { errors: [{ code: "invalid_customer" }] })
+    );
     const rejected = await createAsaasGateway(config).createPix({ amountCents: 5000, description: "x", idempotencyKey: "k", externalReference: "r" });
     expect(rejected.ok === false && rejected.error).toBe("gateway_rejected");
 
@@ -66,6 +73,97 @@ describe("Asaas gateway", () => {
     });
     const down = await createAsaasGateway(config).createPix({ amountCents: 5000, description: "x", idempotencyKey: "k", externalReference: "r" });
     expect(down.ok === false && down.error).toBe("gateway_unavailable");
+  });
+
+  describe("reconciliação por externalReference (R2)", () => {
+    const input = { amountCents: 5000, description: "Doação", idempotencyKey: crypto.randomUUID(), externalReference: "intent-1" };
+    const future = "2099-01-01 12:00:00";
+    const past = "2020-01-01 12:00:00";
+    const pending = (over: Record<string, unknown> = {}) => ({
+      id: "pay_old", status: "PENDING", billingType: "PIX", value: 50, deleted: false, dateCreated: "2026-11-07", ...over,
+    });
+
+    /** Roteia: lista, criação (POST) e QR por id. */
+    function scenario(list: Response | (() => Response), qr: Record<string, Response> = {}) {
+      return stubFetch((url, init) => {
+        if (init.method === "GET" && url.includes("/payments?")) return typeof list === "function" ? list() : list;
+        if (init.method === "POST") return jsonRes(200, { id: "pay_new" });
+        const id = url.split("/payments/")[1].split("/")[0];
+        return qr[id] ?? jsonRes(200, { payload: `PIX-${id}`, expirationDate: future });
+      });
+    }
+    const posts = (calls: Call[]) => calls.filter((c) => c.init.method === "POST");
+
+    it("reaproveita cobrança PENDING válida sem criar outra (falha entre a criação e a gravação local)", async () => {
+      const calls = scenario(jsonRes(200, { data: [pending()], hasMore: false }));
+      const result = await createAsaasGateway(config).createPix(input);
+      expect(result).toEqual({ ok: true, value: { providerChargeId: "pay_old", pixCopyPaste: "PIX-pay_old", expiresAt: "2099-01-01T15:00:00.000Z" } });
+      expect(posts(calls)).toHaveLength(0);
+    });
+
+    it("cria nova cobrança quando a existente foi removida, está vencida ou tem QR expirado", async () => {
+      for (const list of [
+        [pending({ deleted: true })],
+        [pending({ status: "OVERDUE" })],
+        [pending({ id: "pay_exp" })],
+      ]) {
+        const calls = scenario(jsonRes(200, { data: list, hasMore: false }), {
+          pay_exp: jsonRes(200, { payload: "OLD", expirationDate: past }),
+        });
+        const result = await createAsaasGateway(config).createPix(input);
+        expect(result.ok && result.value.providerChargeId).toBe("pay_new");
+        expect(posts(calls)).toHaveLength(1);
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it.each([
+      ["paga", pending({ status: "RECEIVED" })],
+      ["confirmada", pending({ status: "CONFIRMED" })],
+      ["estornada", pending({ status: "REFUNDED" })],
+      ["valor divergente", pending({ value: 10 })],
+      ["status desconhecido", pending({ status: "NOVO_STATUS" })],
+    ])("nunca cria nova cobrança nem reutiliza quando a existente está %s", async (_name, existing) => {
+      const calls = scenario(jsonRes(200, { data: [existing], hasMore: false }));
+      const result = await createAsaasGateway(config).createPix(input);
+      expect(result.ok === false && result.error).toBe("gateway_rejected");
+      expect(posts(calls)).toHaveLength(0);
+    });
+
+    it("não cria cobrança se a consulta falhar ou vier incompleta (evita duplicar)", async () => {
+      for (const list of [() => jsonRes(503, {}), () => jsonRes(200, { data: [], hasMore: true }), () => jsonRes(200, { foo: 1 })]) {
+        const calls = scenario(list);
+        const result = await createAsaasGateway(config).createPix(input);
+        expect(result.ok).toBe(false);
+        expect(posts(calls)).toHaveLength(0);
+        vi.unstubAllGlobals();
+      }
+      stubFetch(() => {
+        throw new TypeError("network down");
+      });
+      expect((await createAsaasGateway(config).createPix(input)).ok).toBe(false);
+    });
+
+    it("falha ao obter o QR depois de criar é reconciliada na retentativa, sem segunda cobrança", async () => {
+      let created = false;
+      const calls = stubFetch((url, init) => {
+        if (init.method === "GET" && url.includes("/payments?"))
+          return jsonRes(200, { data: created ? [pending({ id: "pay_new" })] : [], hasMore: false });
+        if (init.method === "POST") {
+          created = true;
+          return jsonRes(200, { id: "pay_new" });
+        }
+        return created && calls.filter((c) => c.url.includes("pixQrCode")).length === 1
+          ? jsonRes(503, {})
+          : jsonRes(200, { payload: "PIX-NEW", expirationDate: future });
+      });
+      const gateway = createAsaasGateway(config);
+      const first = await gateway.createPix(input);
+      expect(first.ok === false && first.error).toBe("gateway_unavailable");
+      const second = await gateway.createPix(input);
+      expect(second.ok && second.value.providerChargeId).toBe("pay_new");
+      expect(posts(calls)).toHaveLength(1);
+    });
   });
 
   const webhook = (token: string | null, body: unknown) =>

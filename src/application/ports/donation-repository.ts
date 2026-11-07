@@ -29,6 +29,16 @@ export interface DonationRepository {
     donorEmail?: string;
   }): Promise<DonationIntentRecord>;
 
+  /** Cobrança já gravada para a intenção, se houver (usada após obter o bloqueio de criação). */
+  findFirstCharge(intentId: string): Promise<StoredCharge | null>;
+
+  /**
+   * Exclusão mútua por intenção: chamadas concorrentes com a mesma intenção executam `work` uma de cada vez.
+   * `work` recebe o repositório a usar dentro do bloqueio (na transação, no adaptador SQL); quem espera
+   * enxerga o que o anterior gravou. Falha ao obter o bloqueio lança exceção.
+   */
+  withCreationLock<T>(intentId: string, work: (repo: DonationRepository) => Promise<T>): Promise<T>;
+
   /** Grava a 1ª cobrança da intenção; em corrida concorrente devolve a que venceu. */
   saveFirstCharge(input: {
     intentId: string;

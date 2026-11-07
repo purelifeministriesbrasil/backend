@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type {
   ChargeRepository,
   DonationRepository,
@@ -26,7 +26,7 @@ function toStoredCharge(row: ChargeRow): StoredCharge {
 }
 
 export function createDrizzleDonationRepository(
-  db: Pick<Database, "select" | "insert">,
+  db: Pick<Database, "select" | "insert" | "transaction" | "execute">,
   enc: EncryptionProvider,
   hashEmail: KeyedHasher
 ): DonationRepository {
@@ -38,7 +38,7 @@ export function createDrizzleDonationRepository(
     return row ? toStoredCharge(row) : null;
   }
 
-  return {
+  const repository: DonationRepository = {
     async findOrCreateIntent({ idempotencyKey, amountCents, frequency, donorEmail }) {
       const id = crypto.randomUUID();
       const emailFields = donorEmail
@@ -82,6 +82,17 @@ export function createDrizzleDonationRepository(
       };
     },
 
+    findFirstCharge: firstCharge,
+
+    async withCreationLock(intentId, work) {
+      return db.transaction(async (tx) => {
+        // Bloqueio consultivo da transação, liberado no commit/rollback. O timeout evita espera indefinida.
+        await tx.execute(sql`SET LOCAL lock_timeout = '15s'`);
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`donation_intent:${intentId}`}, 0))`);
+        return work(createDrizzleDonationRepository(tx, enc, hashEmail));
+      });
+    },
+
     async saveFirstCharge({ intentId, provider, providerChargeId, amountCents, pixCopyPaste, expiresAt }) {
       const [row] = await db
         .insert(paymentCharges)
@@ -105,6 +116,7 @@ export function createDrizzleDonationRepository(
       return winner;
     },
   };
+  return repository;
 }
 
 export function createDrizzleChargeRepository(db: Pick<Database, "select" | "update" | "insert">): ChargeRepository {
