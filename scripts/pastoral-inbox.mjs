@@ -6,9 +6,12 @@
 // Uso:
 //   node scripts/pastoral-inbox.mjs list
 //   node scripts/pastoral-inbox.mjs show <CÓDIGO> --reason "motivo" [--include-report]
-//   node scripts/pastoral-inbox.mjs set-status <CÓDIGO> <status>
+//   node scripts/pastoral-inbox.mjs set-status <CÓDIGO> <status> --reason "motivo da alteração"
+//     triagem: received | in_review | contacted | closed   contato: received | answered | closed
+//     (`purged` é exclusivo do expurgo automático)
 // Execute apenas em máquina confiável; nunca redirecione a saída para arquivos compartilhados.
 import postgres from "postgres";
+import { parseSetStatusArgs, validateStatusChange } from "./pastoral-status.mjs";
 
 const [command, ...args] = process.argv.slice(2);
 const flag = (name) => {
@@ -99,15 +102,30 @@ try {
       console.log("Mensagem:\n" + message);
     }
   } else if (command === "set-status") {
-    const [code, status] = args;
-    const found = code && (await findByCode(code));
-    if (!found) fail("Código não encontrado.");
-    const table = sql(found.kind === "triage" ? "triage_submissions" : "contact_submissions");
-    await sql`UPDATE ${table} SET status = ${status} WHERE id = ${found.row.id}`;
-    await audit(`${found.kind}.status_changed`, found.kind === "triage" ? "triage_submission" : "contact_submission", found.row.id, status);
-    console.log(`Status de ${code} → ${status}`);
+    const parsed = parseSetStatusArgs(args);
+    if (!parsed.ok) fail(parsed.message);
+    const found = await findByCode(parsed.code);
+    if (!found) fail("Código não encontrado (ou já expurgado).");
+    const check = validateStatusChange(found.kind, found.row.status, parsed.status);
+    if (!check.ok) fail(check.message);
+
+    const table = found.kind === "triage" ? "triage_submissions" : "contact_submissions";
+    const entityType = found.kind === "triage" ? "triage_submission" : "contact_submission";
+    const from = found.row.status;
+    // Atualização e auditoria na mesma transação; o WHERE em status evita sobrescrever alteração concorrente.
+    const changed = await sql.begin(async (tx) => {
+      const rows = await tx`UPDATE ${tx(table)} SET status = ${parsed.status}
+                            WHERE id = ${found.row.id} AND status = ${from} RETURNING id`;
+      if (rows.length === 0) return false;
+      await tx`INSERT INTO audit_events (actor, actor_role, action, reason, entity_type, entity_id, metadata)
+               VALUES (${OPERATOR}, 'pastoral', ${`${found.kind}.status_changed`}, ${parsed.reason},
+                       ${entityType}, ${found.row.id}, ${tx.json({ from_status: from, to_status: parsed.status })})`;
+      return true;
+    });
+    if (!changed) fail("O status mudou durante a operação; releia o registro e tente de novo.");
+    console.log(`Status de ${parsed.code}: ${from} → ${parsed.status}`);
   } else {
-    fail("Comandos: list | show <código> --reason \"...\" [--include-report] | set-status <código> <status>");
+    fail("Comandos: list | show <código> --reason \"...\" [--include-report] | set-status <código> <status> --reason \"...\"");
   }
 } catch (err) {
   console.error(`[pastoral-inbox] Falha: ${err instanceof Error ? err.message : String(err)}`);

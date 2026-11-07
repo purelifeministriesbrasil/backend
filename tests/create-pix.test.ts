@@ -8,9 +8,17 @@ import { SITE, failTurnstile, jsonRequest, passTurnstile } from "./helpers.js";
 function inMemoryDonations(): DonationRepository & { intents: Map<string, { id: string; amountCents: number; frequency: "one_time" | "monthly" }>; charges: Map<string, StoredCharge> } {
   const intents = new Map<string, { id: string; amountCents: number; frequency: "one_time" | "monthly" }>();
   const charges = new Map<string, StoredCharge>();
-  return {
+  let tail: Promise<unknown> = Promise.resolve();
+  const repo: DonationRepository & { intents: typeof intents; charges: typeof charges } = {
     intents,
     charges,
+    findFirstCharge: vi.fn(async (intentId: string) => charges.get(intentId) ?? null),
+    // Exclusão mútua em memória, como o bloqueio consultivo do Postgres: um `work` por vez.
+    withCreationLock: (async <T,>(_intentId: string, work: (r: DonationRepository) => Promise<T>) => {
+      const run = tail.then(() => work(repo));
+      tail = run.catch(() => undefined);
+      return run;
+    }) as DonationRepository["withCreationLock"],
     findOrCreateIntent: vi.fn(async ({ idempotencyKey, amountCents, frequency }) => {
       const existing = intents.get(idempotencyKey);
       if (existing) {
@@ -36,6 +44,7 @@ function inMemoryDonations(): DonationRepository & { intents: Map<string, { id: 
       return charge;
     }),
   };
+  return repo;
 }
 
 function fakeGateway(result: "ok" | "unavailable" | "rejected" = "ok") {
@@ -91,6 +100,53 @@ describe("POST /api/donations/create-pix (ponta a ponta com portas simuladas)", 
 
     expect(second).toEqual(first);
     expect(gateway.createPix).toHaveBeenCalledTimes(1);
+  });
+
+  it("concurrent requests with the same key create only one charge at the gateway", async () => {
+    const repo = inMemoryDonations();
+    const gateway = fakeGateway();
+    // Gateway lento: sem exclusão mútua, as duas chamadas passariam juntas pela criação.
+    const original = gateway.createPix.getMockImplementation()!;
+    gateway.createPix.mockImplementation(async (...args: Parameters<typeof original>) => {
+      await new Promise((r) => setTimeout(r, 20));
+      return original(...args);
+    });
+    const key = crypto.randomUUID();
+    const deps = { turnstile: passTurnstile, donations: () => ({ gateway, repo }) };
+
+    const [a, b] = await Promise.all([
+      handleCreatePix(jsonRequest("/api/donations/create-pix", body, { "Idempotency-Key": key }), env, deps),
+      handleCreatePix(jsonRequest("/api/donations/create-pix", body, { "Idempotency-Key": key }), env, deps),
+    ]);
+
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(await a.json()).toEqual(await b.json());
+    expect(gateway.createPix).toHaveBeenCalledTimes(1);
+    expect(repo.charges.size).toBe(1);
+  });
+
+  it("failure after the remote charge but before saving locally is retryable with the same intent reference", async () => {
+    const repo = inMemoryDonations();
+    const gateway = fakeGateway();
+    const realSave = repo.saveFirstCharge;
+    (repo.saveFirstCharge as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => {
+      throw new Error("db down");
+    });
+    const key = crypto.randomUUID();
+    const deps = { turnstile: passTurnstile, donations: () => ({ gateway, repo }) };
+
+    const first = await handleCreatePix(jsonRequest("/api/donations/create-pix", body, { "Idempotency-Key": key }), env, deps);
+    expect(first.status).toBe(500); // donation_persistence_failed
+    expect(repo.charges.size).toBe(0);
+
+    const second = await handleCreatePix(jsonRequest("/api/donations/create-pix", body, { "Idempotency-Key": key }), env, deps);
+    expect(second.status).toBe(200);
+    expect(realSave).toBeDefined();
+    // As duas tentativas usam a mesma referência estável: é ela que permite ao Asaas reencontrar a cobrança.
+    const refs = gateway.createPix.mock.calls.map((c) => (c[0] as { externalReference: string }).externalReference);
+    expect(refs).toHaveLength(2);
+    expect(refs[0]).toBe(refs[1]);
   });
 
   it("returns 409 when the same idempotency key is reused for a different amount", async () => {
