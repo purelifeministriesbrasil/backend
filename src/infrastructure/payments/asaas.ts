@@ -32,6 +32,9 @@ const EVENT_MAP: Record<string, PaymentEventType> = {
 
 type GatewayFailure = { ok: false; kind: "infrastructure"; error: "gateway_rejected" | "gateway_unavailable"; retryable: boolean };
 
+/** Tempo máximo gasto antes de criar a cobrança (listar/cancelar), para limitar quanto a transação fica aberta. */
+const PRE_CREATE_BUDGET_MS = 20_000;
+
 const unavailable: GatewayFailure = { ok: false, kind: "infrastructure", error: "gateway_unavailable", retryable: true };
 const rejected: GatewayFailure = { ok: false, kind: "infrastructure", error: "gateway_rejected", retryable: false };
 
@@ -56,11 +59,126 @@ export function createAsaasGateway(config: AsaasConfig, timeoutMs = 10_000): Pay
     }
   }
 
+
+  type CreateOutcome = UseCaseResult<CreatePixResult, "gateway_rejected" | "gateway_unavailable">;
+
+  /** Busca o QR Code Pix de uma cobrança e monta o resultado; `expirationDate` ausente usa a expiração padrão. */
+  async function fetchQr(
+    paymentId: string,
+    now: Date,
+    opts: { requireExpiration?: boolean } = {}
+  ): Promise<CreateOutcome> {
+    const qr = await call(`/payments/${encodeURIComponent(paymentId)}/pixQrCode`, { method: "GET" });
+    if (!qr || qr.status >= 500) return unavailable;
+    if (qr.status >= 400 || !isRecord(qr.body) || typeof qr.body.payload !== "string") {
+      log("warn", "asaas.qrcode_rejected", { status: qr.status });
+      return rejected;
+    }
+    const parsed = parseBrtLocal(qr.body.expirationDate);
+    if (!parsed && opts.requireExpiration) {
+      log("warn", "asaas.reconcile_blocked", { reason: "qr_without_expiration" });
+      return rejected;
+    }
+    const expiresAt = parsed ?? new Date(now.getTime() + config.pixExpirationMinutes * 60_000);
+    return {
+      ok: true,
+      value: { providerChargeId: paymentId, pixCopyPaste: qr.body.payload, expiresAt: expiresAt.toISOString() },
+    };
+  }
+
+  /**
+   * Procura cobranças já criadas para a intenção. Nunca assume que uma cobrança encontrada é reutilizável:
+   * - reaproveita só PENDING, não removida, Pix, com o mesmo valor e QR ainda não expirado;
+   * - ignora removidas (`deleted`), vencidas (OVERDUE) e PENDING com QR já expirado;
+   * - qualquer outro estado (paga, estornada, valor divergente, desconhecido) BLOQUEIA a criação de nova
+   *   cobrança e exige conciliação manual, em vez de arriscar cobrar o doador duas vezes.
+   * Retorna `null` quando é seguro criar uma nova cobrança.
+   * Falha ao consultar também bloqueia: sem saber se já existe, criar poderia duplicar.
+   */
+  async function findExisting(input: CreatePixInput, now: Date): Promise<CreateOutcome | null> {
+    const query = new URLSearchParams({ externalReference: input.externalReference, billingType: "PIX", limit: "100" });
+    const listed = await call(`/payments?${query.toString()}`, { method: "GET" });
+    if (!listed || listed.status >= 500) return unavailable;
+    if (listed.status >= 400 || !isRecord(listed.body) || !Array.isArray(listed.body.data)) {
+      log("warn", "asaas.reconcile_list_rejected", { status: listed.status });
+      return rejected;
+    }
+    if (listed.body.hasMore === true) {
+      log("warn", "asaas.reconcile_blocked", { reason: "too_many_payments" });
+      return rejected;
+    }
+
+    const reusable: { id: string; dateCreated: string }[] = [];
+    const stale: string[] = []; // vencidas ou com QR expirado: precisam ser canceladas antes de criar outra
+    for (const item of listed.body.data) {
+      if (!isRecord(item) || typeof item.id !== "string") {
+        log("warn", "asaas.reconcile_blocked", { reason: "malformed_item" });
+        return rejected;
+      }
+      if (item.deleted === true) continue; // já removida
+      if (item.status === "OVERDUE") {
+        stale.push(item.id); // vencida: o QR pode continuar pagável, então não basta ignorá-la
+        continue;
+      }
+      const sameAmount = typeof item.value === "number" && Math.round(item.value * 100) === input.amountCents;
+      if (item.status === "PENDING" && item.billingType === "PIX" && sameAmount) {
+        reusable.push({ id: item.id, dateCreated: typeof item.dateCreated === "string" ? item.dateCreated : "" });
+        continue;
+      }
+      log("warn", "asaas.reconcile_blocked", {
+        reason: "existing_payment_not_reusable",
+        status: typeof item.status === "string" ? item.status.slice(0, 40) : "unknown",
+      });
+      return rejected;
+    }
+
+    reusable.sort((a, b) => a.dateCreated.localeCompare(b.dateCreated));
+    for (const candidate of reusable) {
+      const qr = await fetchQr(candidate.id, now, { requireExpiration: true });
+      if (!qr.ok) return qr;
+      if (new Date(qr.value.expiresAt).getTime() <= now.getTime()) {
+        stale.push(candidate.id); // QR expirado: não reutilizar
+        continue;
+      }
+      log("info", "asaas.charge_reused", { reconciled: true });
+      return qr;
+    }
+
+    // Nada aproveitável. Antes de criar outra, cancela as obsoletas: uma cobrança vencida pode manter o QR
+    // pagável, e um pagamento tardio dela chegaria por webhook sem registro local. Se o Asaas recusar o
+    // cancelamento (por exemplo, porque foi paga agora), NÃO cria outra: sinaliza para conciliação manual.
+    for (const id of stale) {
+      const removed = await call(`/payments/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!removed || removed.status >= 500) return unavailable;
+      if (removed.status >= 400 || !isRecord(removed.body) || removed.body.deleted !== true) {
+        log("warn", "asaas.reconcile_blocked", { reason: "stale_payment_not_cancellable", status: removed.status });
+        return rejected;
+      }
+      log("info", "asaas.stale_charge_cancelled", { reconciled: true });
+    }
+    return null;
+  }
+
   return {
     provider: "asaas",
 
     async createPix(input: CreatePixInput): Promise<UseCaseResult<CreatePixResult, "gateway_rejected" | "gateway_unavailable">> {
       const now = new Date();
+
+      // 1) Conciliação ANTES de criar: o Asaas não recebe chave de idempotência (header equivalente não
+      //    comprovado na documentação). Uma cobrança criada numa tentativa anterior, cuja gravação local
+      //    falhou, é localizada por `externalReference` (id estável da intenção).
+      const found = await findExisting(input, now);
+      if (found) return found; // cobrança reaproveitada (ok) ou falha/bloqueio da conciliação
+
+      // Orçamento de tempo: esta chamada roda sob o bloqueio da intenção (transação aberta no banco).
+      // Se a conciliação já consumiu o orçamento, desiste ANTES de criar (nada remoto foi deixado).
+      if (Date.now() - now.getTime() > PRE_CREATE_BUDGET_MS) {
+        log("warn", "asaas.pre_create_budget_exceeded", {});
+        return unavailable;
+      }
+
+      // 2) Nenhuma cobrança aproveitável: cria. Falhas aqui (antes do id remoto) não deixam cobrança.
       const created = await call("/payments", {
         method: "POST",
         body: JSON.stringify({
@@ -79,21 +197,14 @@ export function createAsaasGateway(config: AsaasConfig, timeoutMs = 10_000): Pay
         return rejected;
       }
 
+      // 3) Cobrança já existe no Asaas. Se o QR falhar agora, a retentativa a reencontra no passo 1.
       const paymentId = created.body.id;
-      const qr = await call(`/payments/${encodeURIComponent(paymentId)}/pixQrCode`, { method: "GET" });
-      if (!qr || qr.status >= 500) return unavailable;
-      if (qr.status >= 400 || !isRecord(qr.body) || typeof qr.body.payload !== "string") {
-        log("warn", "asaas.qrcode_rejected", { status: qr.status });
-        return rejected;
+      const qr = await fetchQr(paymentId, now);
+      if (!qr.ok) {
+        log("warn", "asaas.qrcode_failed_after_create", { reconcilable: true });
+        return qr;
       }
-
-      const expiresAt =
-        parseBrtLocal(qr.body.expirationDate) ?? new Date(now.getTime() + config.pixExpirationMinutes * 60_000);
-
-      return {
-        ok: true,
-        value: { providerChargeId: paymentId, pixCopyPaste: qr.body.payload, expiresAt: expiresAt.toISOString() },
-      };
+      return { ok: true, value: qr.value };
     },
 
     async verifyWebhook({ rawBody, headers: reqHeaders }): Promise<UseCaseResult<VerifiedPaymentEvent, WebhookVerificationError>> {

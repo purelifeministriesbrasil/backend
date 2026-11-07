@@ -1,14 +1,19 @@
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
+import { createMiddleware } from "hono/factory";
 import { secureHeaders } from "hono/secure-headers";
 import { handleHealth } from "./presentation/health.js";
 import { handleTriageSubmission } from "./presentation/forms/triagem.js";
 import { handleContactSubmission } from "./presentation/forms/contato.js";
-import { handleNewsletterConfirmation, handleNewsletterSubscription } from "./presentation/forms/newsletter.js";
+import {
+  handleNewsletterConfirmation,
+  handleNewsletterSubscription,
+  handleNewsletterUnsubscribe,
+} from "./presentation/forms/newsletter.js";
 import { handleCreatePix } from "./presentation/donations/create-pix.js";
 import { handlePaymentWebhook } from "./presentation/webhooks/payment.js";
 import { handleScheduledPurge } from "./presentation/cron/purge.js";
-import { serviceUnavailable, internalError, type TurnstileVerifier } from "./presentation/http.js";
+import { clientIp, serviceUnavailable, internalError, type TurnstileVerifier } from "./presentation/http.js";
 import {
   ConfigError,
   isProduction,
@@ -27,7 +32,9 @@ import { createDrizzleContactRepository } from "./infrastructure/db/contact-repo
 import { createDrizzleNewsletterRepository } from "./infrastructure/db/newsletter-repository.js";
 import { createDrizzleChargeRepository, createDrizzleDonationRepository } from "./infrastructure/db/donation-repository.js";
 import { createIdempotencyRepository } from "./infrastructure/db/idempotency.js";
+import { RATE_LIMIT_RETRY_AFTER_SECONDS, readRateLimitMode, shouldBlock } from "./infrastructure/security/rate-limit.js";
 import { createDrizzlePurgeRepository } from "./infrastructure/db/purge-repository.js";
+import { createDrizzlePurgeAlertLog } from "./infrastructure/db/purge-alert-log.js";
 import { createResendNotifier } from "./infrastructure/email/resend.js";
 import { createPaymentGateway } from "./infrastructure/payments/factory.js";
 import { verifyTurnstileToken } from "./infrastructure/security/turnstile.js";
@@ -152,6 +159,29 @@ export function createApp(options: AppOptions = {}) {
     })(c, next)
   );
 
+  // Limitação por IP e endpoint (R5). Só POST; preflight CORS e webhooks de pagamento nunca são limitados.
+  const rateLimited = (endpoint: string, bindingName: "RL_CONTACT" | "RL_TRIAGE" | "RL_NEWSLETTER" | "RL_DONATION") =>
+    createMiddleware<AppEnv>(async (c, next) => {
+      const blocked = await shouldBlock({
+        binding: c.env[bindingName],
+        endpoint,
+        mode: readRateLimitMode(c.env),
+        ip: clientIp(c.req.raw),
+      });
+      if (blocked) {
+        return c.json(
+          { error: "rate_limited", message: "Muitas tentativas em pouco tempo. Aguarde um minuto e tente novamente." },
+          429,
+          { "Retry-After": String(RATE_LIMIT_RETRY_AFTER_SECONDS), "Cache-Control": "no-store" }
+        );
+      }
+      await next();
+    });
+  app.post("/api/forms/contato", rateLimited("contato", "RL_CONTACT"));
+  app.post("/api/forms/triagem", rateLimited("triagem", "RL_TRIAGE"));
+  app.post("/api/forms/newsletter", rateLimited("newsletter", "RL_NEWSLETTER"));
+  app.post("/api/donations/create-pix", rateLimited("create-pix", "RL_DONATION"));
+
   app.get("/health", () => handleHealth());
 
   app.post("/api/forms/triagem", (c) => {
@@ -193,6 +223,7 @@ export function createApp(options: AppOptions = {}) {
         notifier: createResendNotifier(emailConfig),
         tokens: { generate: randomToken, hash: sha256Hex },
         confirmUrl: (token) => `${origin}/newsletter/confirmar/#token=${token}`,
+        unsubscribeUrl: (token) => `${origin}/newsletter/cancelar/#token=${token}`,
       }),
     });
   });
@@ -201,6 +232,17 @@ export function createApp(options: AppOptions = {}) {
     const s = c.get("services");
     s.assertStorageConfigured();
     return handleNewsletterConfirmation(c.req.raw, c.env, {
+      newsletter: () => ({
+        repo: createDrizzleNewsletterRepository(s.db, s.enc, s.hashEmail),
+        tokens: { generate: randomToken, hash: sha256Hex },
+      }),
+    });
+  });
+
+  app.post("/api/forms/newsletter/unsubscribe", (c) => {
+    const s = c.get("services");
+    s.assertStorageConfigured();
+    return handleNewsletterUnsubscribe(c.req.raw, c.env, {
       newsletter: () => ({
         repo: createDrizzleNewsletterRepository(s.db, s.enc, s.hashEmail),
         tokens: { generate: randomToken, hash: sha256Hex },
@@ -260,8 +302,15 @@ export default {
       return;
     }
     const purgeRepo = createDrizzlePurgeRepository(handle.db);
+    let notifier: Notifier | null = null;
+    try {
+      notifier = createResendNotifier(readEmailConfig(env));
+    } catch (err) {
+      if (!(err instanceof ConfigError)) throw err;
+      log("warn", "email.notifications_disabled", { invalidKeys: err.invalidKeys });
+    }
     ctx.waitUntil(
-      handleScheduledPurge(purgeRepo)
+      handleScheduledPurge(purgeRepo, { notifier, alertLog: createDrizzlePurgeAlertLog(handle.db) })
         .then(() => undefined)
         .catch((err) => log("error", "cron.purge_failed", { code: errorCode(err) }))
         .finally(() => handle.close())

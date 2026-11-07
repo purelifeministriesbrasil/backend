@@ -77,3 +77,38 @@ describe("Request Guards (§7.4)", () => {
     expect(res).toBeNull();
   });
 });
+
+describe("Request Guards: sinal de contexto de navegação (R5)", () => {
+  const SITE_ORIGIN = "https://purelifeministriesbrasil.org";
+  const opts = { maxBytes: 8192, accept: ["application/json", "application/x-www-form-urlencoded"] };
+  const post = (headers: Record<string, string>) =>
+    new Request("https://api.purelifeministriesbrasil.org/api/forms/contato", { method: "POST", headers });
+
+  it("recusa (403) requisição sem Origin e sem Sec-Fetch-Site", () => {
+    expect(guardRequest(post({ "Content-Type": "application/json" }), SITE_ORIGIN, opts)?.status).toBe(403);
+  });
+
+  it("aceita só com Origin válido (cliente sem Sec-Fetch-Site, ex.: Safari antigo)", () => {
+    expect(guardRequest(post({ "Content-Type": "application/json", Origin: SITE_ORIGIN }), SITE_ORIGIN, opts)).toBeNull();
+  });
+
+  it("aceita só com Sec-Fetch-Site same-origin/same-site", () => {
+    for (const site of ["same-origin", "same-site"]) {
+      expect(guardRequest(post({ "Content-Type": "application/json", "Sec-Fetch-Site": site }), SITE_ORIGIN, opts)).toBeNull();
+    }
+  });
+
+  it("aceita formulário nativo sem JavaScript (urlencoded com Origin do site)", () => {
+    const req = post({ "Content-Type": "application/x-www-form-urlencoded", Origin: SITE_ORIGIN, "Sec-Fetch-Site": "same-site" });
+    expect(guardRequest(req, SITE_ORIGIN, opts)).toBeNull();
+  });
+
+  it("recusa origem inválida e Sec-Fetch-Site cross-site/none, mesmo com o outro sinal válido", () => {
+    expect(guardRequest(post({ "Content-Type": "application/json", Origin: "https://evil.example" }), SITE_ORIGIN, opts)?.status).toBe(403);
+    expect(guardRequest(post({ "Content-Type": "application/json", Origin: "null" }), SITE_ORIGIN, opts)?.status).toBe(403);
+    for (const site of ["cross-site", "none"]) {
+      const req = post({ "Content-Type": "application/json", Origin: SITE_ORIGIN, "Sec-Fetch-Site": site });
+      expect(guardRequest(req, SITE_ORIGIN, opts)?.status).toBe(403);
+    }
+  });
+});

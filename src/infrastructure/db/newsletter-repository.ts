@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, inArray } from "drizzle-orm";
 import type { NewsletterRepository } from "../../application/ports/newsletter-repository.js";
 import type { EncryptionProvider } from "../../application/ports/encryption-provider.js";
 import type { KeyedHasher } from "../crypto/hashing.js";
@@ -14,7 +14,17 @@ export function createDrizzleNewsletterRepository(
   hashEmail: KeyedHasher
 ): NewsletterRepository {
   return {
-    async upsertPending({ email, policyVersion, consentedAt, confirmTokenHash, confirmExpiresAt, resendCooldownSeconds, now }) {
+    async upsertPending({
+      email,
+      policyVersion,
+      consentedAt,
+      confirmTokenHash,
+      confirmExpiresAt,
+      unsubscribeTokenHash,
+      unsubscribeExpiresAt,
+      resendCooldownSeconds,
+      now,
+    }) {
       const emailHash = await hashEmail(email);
 
       return db.transaction(async (tx) => {
@@ -42,6 +52,8 @@ export function createDrizzleNewsletterRepository(
               status: "pending",
               confirmTokenHash,
               confirmExpiresAt,
+              unsubscribeTokenHash,
+              unsubscribeExpiresAt,
               confirmSentAt: now,
               policyVersion,
               consentedAt,
@@ -64,6 +76,8 @@ export function createDrizzleNewsletterRepository(
             status: "pending",
             confirmTokenHash,
             confirmExpiresAt,
+            unsubscribeTokenHash,
+            unsubscribeExpiresAt,
             confirmSentAt: now,
             policyVersion,
             consentedAt,
@@ -83,6 +97,28 @@ export function createDrizzleNewsletterRepository(
             eq(newsletterSubscriptions.confirmTokenHash, confirmTokenHash),
             eq(newsletterSubscriptions.status, "pending"),
             gt(newsletterSubscriptions.confirmExpiresAt, now)
+          )
+        )
+        .returning({ id: newsletterSubscriptions.id });
+      return rows.length > 0;
+    },
+
+    async unsubscribe(unsubscribeTokenHash, now) {
+      const rows = await db
+        .update(newsletterSubscriptions)
+        .set({
+          status: "unsubscribed",
+          unsubscribedAt: now,
+          unsubscribeTokenHash: null,
+          unsubscribeExpiresAt: null,
+          confirmTokenHash: null,
+          confirmExpiresAt: null,
+        })
+        .where(
+          and(
+            eq(newsletterSubscriptions.unsubscribeTokenHash, unsubscribeTokenHash),
+            inArray(newsletterSubscriptions.status, ["pending", "confirmed"]),
+            gt(newsletterSubscriptions.unsubscribeExpiresAt, now)
           )
         )
         .returning({ id: newsletterSubscriptions.id });

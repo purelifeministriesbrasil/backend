@@ -35,6 +35,14 @@ export interface Env {
   MERCADOPAGO_WEBHOOK_SECRET?: string;
   MERCADOPAGO_PAYER_FALLBACK_EMAIL?: string;
 
+  /** `off` (padrão) | `log` | `enforce`. Ver infrastructure/security/rate-limit.ts. */
+  RATE_LIMIT_MODE?: string;
+  /** Bindings de Rate Limiting do Cloudflare (um por endpoint; limites no wrangler.toml). */
+  RL_CONTACT?: RateLimit;
+  RL_TRIAGE?: RateLimit;
+  RL_NEWSLETTER?: RateLimit;
+  RL_DONATION?: RateLimit;
+
   [key: string]: unknown;
 }
 
