@@ -244,26 +244,35 @@ describe.skipIf(!url)("Repositórios Drizzle contra PostgreSQL real", () => {
   });
 
   it("withCreationLock: transação ociosa além do teto é encerrada pelo Postgres e o bloqueio é liberado", async () => {
+    // Clientes dedicados: o Postgres encerra a conexão ociosa de `a`, e isso não pode afetar o `handle` compartilhado.
+    const victim = createDbClient(url as string);
     const other = createDbClient(url as string);
     try {
-      const a = createDrizzleDonationRepository(handle.db, enc, hashEmail, { idleInTransactionTimeoutMs: 300 });
+      const a = createDrizzleDonationRepository(victim.db, enc, hashEmail, { idleInTransactionTimeoutMs: 300 });
       const b = createDrizzleDonationRepository(other.db, enc, hashEmail, { lockTimeoutMs: 5000 });
       const intent = crypto.randomUUID();
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
       // Simula o Worker travado no gateway sob o bloqueio: nenhum comando SQL por mais tempo que o teto.
-      const stuck = a.withCreationLock(intent, async () => {
-        await sleep(1200);
-      });
+      // Rejeição capturada na hora: a conexão derrubada pelo servidor não pode virar "unhandled rejection".
+      const stuck = a
+        .withCreationLock(intent, async () => {
+          await sleep(1200);
+        })
+        .then(
+          () => "completed",
+          () => "failed",
+        );
       await sleep(80);
       const started = Date.now();
       const waiter = b.withCreationLock(intent, async () => "acquired");
 
       await expect(waiter).resolves.toBe("acquired");
       expect(Date.now() - started).toBeLessThan(1500); // liberou pelo teto, não pelo fim do `work` travado
-      await expect(stuck).rejects.toThrow();
+      await expect(stuck).resolves.toBe("failed");
     } finally {
       await other.close();
+      await victim.close().catch(() => undefined);
     }
   });
 
