@@ -3,6 +3,8 @@ import type { Notifier } from "../ports/notifier.js";
 import type { UseCaseResult } from "../ports/result.js";
 
 export const NEWSLETTER_CONFIRM_TTL_HOURS = 48;
+/** Validade do token de descadastro enviado no e-mail (o envio de edições futuras deve emitir token novo). */
+export const NEWSLETTER_UNSUBSCRIBE_TTL_DAYS = 180;
 /** Janela mínima entre reenvios de confirmação para o mesmo e-mail (anti e-mail bombing). */
 export const NEWSLETTER_RESEND_COOLDOWN_SECONDS = 15 * 60;
 
@@ -19,6 +21,8 @@ export interface SubscribeNewsletterDeps {
   tokens: NewsletterTokens;
   /** Monta o link absoluto de confirmação a partir do token. */
   confirmUrl: (token: string) => string;
+  /** Monta o link absoluto da página de descadastro a partir do token. */
+  unsubscribeUrl: (token: string) => string;
   now?: () => Date;
 }
 
@@ -32,6 +36,7 @@ export async function subscribeNewsletter(
 ): Promise<UseCaseResult<{ confirmationSent: boolean }, "newsletter_persistence_failed">> {
   const now = deps.now?.() ?? new Date();
   const token = deps.tokens.generate();
+  const unsubscribeToken = deps.tokens.generate();
 
   let outcome;
   try {
@@ -41,6 +46,8 @@ export async function subscribeNewsletter(
       consentedAt: now,
       confirmTokenHash: await deps.tokens.hash(token),
       confirmExpiresAt: new Date(now.getTime() + NEWSLETTER_CONFIRM_TTL_HOURS * 60 * 60 * 1000),
+      unsubscribeTokenHash: await deps.tokens.hash(unsubscribeToken),
+      unsubscribeExpiresAt: new Date(now.getTime() + NEWSLETTER_UNSUBSCRIBE_TTL_DAYS * 24 * 60 * 60 * 1000),
       resendCooldownSeconds: NEWSLETTER_RESEND_COOLDOWN_SECONDS,
       now,
     });
@@ -57,7 +64,8 @@ export async function subscribeNewsletter(
     "Confirme sua inscrição — Pure Life Ministries Brasil",
     "Recebemos um pedido para inscrever este e-mail na newsletter da Pure Life Ministries Brasil.\n\n" +
       `Para confirmar, acesse: ${deps.confirmUrl(token)}\n\n` +
-      `O link expira em ${NEWSLETTER_CONFIRM_TTL_HOURS} horas. Se você não fez este pedido, ignore esta mensagem.`
+      `O link expira em ${NEWSLETTER_CONFIRM_TTL_HOURS} horas. Se você não fez este pedido, ignore esta mensagem.\n\n` +
+      `Para não receber mais mensagens, acesse: ${deps.unsubscribeUrl(unsubscribeToken)}`
   );
 
   return { ok: true, value: { confirmationSent: sent } };
@@ -70,6 +78,22 @@ export async function confirmNewsletter(
   try {
     const confirmed = await deps.repo.confirm(await deps.tokens.hash(token), deps.now?.() ?? new Date());
     return { ok: true, value: { confirmed } };
+  } catch {
+    return { ok: false, kind: "infrastructure", error: "newsletter_persistence_failed", retryable: true };
+  }
+}
+
+/**
+ * Descadastro de uso único. O resultado não diferencia token inexistente, expirado ou já usado
+ * (idempotente e neutro): só `unsubscribed` informa se houve mudança, para uso interno e testes.
+ */
+export async function unsubscribeNewsletter(
+  token: string,
+  deps: { repo: NewsletterRepository; tokens: Pick<NewsletterTokens, "hash">; now?: () => Date }
+): Promise<UseCaseResult<{ unsubscribed: boolean }, "newsletter_persistence_failed">> {
+  try {
+    const unsubscribed = await deps.repo.unsubscribe(await deps.tokens.hash(token), deps.now?.() ?? new Date());
+    return { ok: true, value: { unsubscribed } };
   } catch {
     return { ok: false, kind: "infrastructure", error: "newsletter_persistence_failed", retryable: true };
   }

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type {
   ChargeRepository,
   DonationRepository,
@@ -25,11 +25,24 @@ function toStoredCharge(row: ChargeRow): StoredCharge {
   };
 }
 
+export interface CreationLockOptions {
+  /** Quanto tempo uma requisição espera pelo bloqueio da intenção (padrão 15 s). */
+  lockTimeoutMs?: number;
+  /**
+   * Teto para a transação ficar ociosa (as chamadas ao gateway acontecem sob o bloqueio, sem comandos SQL).
+   * Se o Worker morrer no meio, o Postgres encerra a sessão e libera o bloqueio e a conexão (padrão 60 s).
+   */
+  idleInTransactionTimeoutMs?: number;
+}
+
 export function createDrizzleDonationRepository(
-  db: Pick<Database, "select" | "insert">,
+  db: Pick<Database, "select" | "insert" | "transaction" | "execute">,
   enc: EncryptionProvider,
-  hashEmail: KeyedHasher
+  hashEmail: KeyedHasher,
+  lock: CreationLockOptions = {}
 ): DonationRepository {
+  const lockTimeoutMs = Math.floor(lock.lockTimeoutMs ?? 15_000);
+  const idleInTxMs = Math.floor(lock.idleInTransactionTimeoutMs ?? 60_000);
   async function firstCharge(intentId: string): Promise<StoredCharge | null> {
     const [row] = await db
       .select()
@@ -38,7 +51,7 @@ export function createDrizzleDonationRepository(
     return row ? toStoredCharge(row) : null;
   }
 
-  return {
+  const repository: DonationRepository = {
     async findOrCreateIntent({ idempotencyKey, amountCents, frequency, donorEmail }) {
       const id = crypto.randomUUID();
       const emailFields = donorEmail
@@ -82,6 +95,18 @@ export function createDrizzleDonationRepository(
       };
     },
 
+    findFirstCharge: firstCharge,
+
+    async withCreationLock(intentId, work) {
+      return db.transaction(async (tx) => {
+        // Bloqueio consultivo da transação, liberado no commit/rollback. O timeout evita espera indefinida.
+        await tx.execute(sql.raw(`SET LOCAL lock_timeout = ${lockTimeoutMs}`));
+        await tx.execute(sql.raw(`SET LOCAL idle_in_transaction_session_timeout = ${idleInTxMs}`));
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`donation_intent:${intentId}`}, 0))`);
+        return work(createDrizzleDonationRepository(tx, enc, hashEmail, lock));
+      });
+    },
+
     async saveFirstCharge({ intentId, provider, providerChargeId, amountCents, pixCopyPaste, expiresAt }) {
       const [row] = await db
         .insert(paymentCharges)
@@ -105,6 +130,7 @@ export function createDrizzleDonationRepository(
       return winner;
     },
   };
+  return repository;
 }
 
 export function createDrizzleChargeRepository(db: Pick<Database, "select" | "update" | "insert">): ChargeRepository {
