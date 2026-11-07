@@ -28,6 +28,7 @@ import { createDrizzleNewsletterRepository } from "./infrastructure/db/newslette
 import { createDrizzleChargeRepository, createDrizzleDonationRepository } from "./infrastructure/db/donation-repository.js";
 import { createIdempotencyRepository } from "./infrastructure/db/idempotency.js";
 import { createDrizzlePurgeRepository } from "./infrastructure/db/purge-repository.js";
+import { createDrizzlePurgeAlertLog } from "./infrastructure/db/purge-alert-log.js";
 import { createResendNotifier } from "./infrastructure/email/resend.js";
 import { createPaymentGateway } from "./infrastructure/payments/factory.js";
 import { verifyTurnstileToken } from "./infrastructure/security/turnstile.js";
@@ -260,8 +261,15 @@ export default {
       return;
     }
     const purgeRepo = createDrizzlePurgeRepository(handle.db);
+    let notifier: Notifier | null = null;
+    try {
+      notifier = createResendNotifier(readEmailConfig(env));
+    } catch (err) {
+      if (!(err instanceof ConfigError)) throw err;
+      log("warn", "email.notifications_disabled", { invalidKeys: err.invalidKeys });
+    }
     ctx.waitUntil(
-      handleScheduledPurge(purgeRepo)
+      handleScheduledPurge(purgeRepo, { notifier, alertLog: createDrizzlePurgeAlertLog(handle.db) })
         .then(() => undefined)
         .catch((err) => log("error", "cron.purge_failed", { code: errorCode(err) }))
         .finally(() => handle.close())
