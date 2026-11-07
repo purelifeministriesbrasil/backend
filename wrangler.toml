@@ -24,6 +24,9 @@ EMAIL_FROM = "Pure Life Ministries Brasil <nao-responda@purelifeministriesbrasil
 STAFF_NOTIFICATION_EMAIL = "purelifeministriesbrasil1986@gmail.com"
 # Asaas: produção é o padrão; para sandbox use https://api-sandbox.asaas.com/v3
 ASAAS_API_BASE_URL = "https://api.asaas.com/v3"
+# Limitação de taxa por IP e endpoint (R5): off | log | enforce. "log" só registra `rate_limit.would_block`
+# (homologação); trocar para "enforce" é uma decisão deliberada após avaliar IPs compartilhados e tráfego legítimo.
+RATE_LIMIT_MODE = "log"
 
 # Segredos obrigatórios (`wrangler secret put <NOME>`), nunca neste arquivo:
 #   DATABASE_URL            Neon → Connect → conexão com pooling (host com "-pooler"); reserva do Hyperdrive
@@ -45,3 +48,29 @@ id = "9194030c37b94749ba819e8428d40edf"
 # Expurgo LGPD diário às 03:00 UTC (00:00 em Brasília).
 [triggers]
 crons = ["0 3 * * *"]
+
+# Rate Limiting (janela de 60 s, por IP). Valores INICIAIS de homologação, não limites definitivos.
+# Webhooks de pagamento nunca são limitados. namespace_id é um identificador numérico da conta, único por binding.
+[[unsafe.bindings]]
+name = "RL_CONTACT"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+[[unsafe.bindings]]
+name = "RL_TRIAGE"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 10, period = 60 }
+
+[[unsafe.bindings]]
+name = "RL_NEWSLETTER"
+type = "ratelimit"
+namespace_id = "1003"
+simple = { limit = 5, period = 60 }
+
+[[unsafe.bindings]]
+name = "RL_DONATION"
+type = "ratelimit"
+namespace_id = "1004"
+simple = { limit = 5, period = 60 }
