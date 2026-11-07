@@ -12,6 +12,7 @@ import { createDrizzleChargeRepository, createDrizzleDonationRepository } from "
 import { createIdempotencyRepository } from "../src/infrastructure/db/idempotency.js";
 import { createDrizzlePurgeRepository } from "../src/infrastructure/db/purge-repository.js";
 import { handleScheduledPurge } from "../src/presentation/cron/purge.js";
+import { createDrizzlePurgeAlertLog } from "../src/infrastructure/db/purge-alert-log.js";
 import { randomKeyB64 } from "./helpers.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -87,7 +88,7 @@ describe.skipIf(!url)("Repositórios Drizzle contra PostgreSQL real", () => {
   it("newsletter double opt-in: pending → cooldown → confirm once", async () => {
     const repo = createDrizzleNewsletterRepository(handle.db, enc, hashEmail);
     const now = new Date();
-    const base = { email: "leitor@example.com", policyVersion: "2026-09-19", consentedAt: now, confirmExpiresAt: new Date(now.getTime() + 3_600_000), resendCooldownSeconds: 900, now };
+    const base = { email: "leitor@example.com", policyVersion: "2026-09-19", consentedAt: now, confirmExpiresAt: new Date(now.getTime() + 3_600_000), unsubscribeTokenHash: await sha256Hex("unsub-0"), unsubscribeExpiresAt: new Date(now.getTime() + 86_400_000), resendCooldownSeconds: 900, now };
     const hash1 = await sha256Hex("token-1");
 
     expect(await repo.upsertPending({ ...base, confirmTokenHash: hash1 })).toEqual({ kind: "confirmation_required" });
@@ -98,6 +99,45 @@ describe.skipIf(!url)("Repositórios Drizzle contra PostgreSQL real", () => {
 
     const dump = JSON.stringify(await handle.db.execute(sql`SELECT * FROM newsletter_subscriptions`));
     expect(dump).not.toContain("leitor@example.com");
+  });
+
+  it("newsletter unsubscribe: single-use, expiring, and re-subscription needs a new double opt-in", async () => {
+    const repo = createDrizzleNewsletterRepository(handle.db, enc, hashEmail);
+    const now = new Date();
+    const unsub1 = await sha256Hex("unsub-1");
+    const base = {
+      email: "saida@example.com",
+      policyVersion: "2026-09-19",
+      consentedAt: now,
+      confirmTokenHash: await sha256Hex("conf-1"),
+      confirmExpiresAt: new Date(now.getTime() + 3_600_000),
+      unsubscribeTokenHash: unsub1,
+      unsubscribeExpiresAt: new Date(now.getTime() + 86_400_000),
+      resendCooldownSeconds: 0,
+      now,
+    };
+    await repo.upsertPending(base);
+    await repo.confirm(base.confirmTokenHash, now);
+
+    expect(await repo.unsubscribe(await sha256Hex("desconhecido"), now)).toBe(false);
+    expect(await repo.unsubscribe(unsub1, new Date(now.getTime() + 2 * 86_400_000))).toBe(false); // expirado
+    expect(await repo.unsubscribe(unsub1, now)).toBe(true);
+    expect(await repo.unsubscribe(unsub1, now)).toBe(false); // uso único
+
+    const [row] = (await handle.db.execute(
+      sql`SELECT status, unsubscribed_at, unsubscribe_token_hash, confirm_token_hash FROM newsletter_subscriptions`
+    )) as unknown as { status: string; unsubscribed_at: Date | null; unsubscribe_token_hash: string | null; confirm_token_hash: string | null }[];
+    expect(row.status).toBe("unsubscribed");
+    expect(row.unsubscribed_at).not.toBeNull();
+    expect(row.unsubscribe_token_hash).toBeNull();
+    expect(row.confirm_token_hash).toBeNull();
+
+    // Nova inscrição exige novo consentimento e confirmação (volta a pending, não a confirmed).
+    const again = await repo.upsertPending({ ...base, confirmTokenHash: await sha256Hex("conf-2"), unsubscribeTokenHash: await sha256Hex("unsub-2") });
+    expect(again).toEqual({ kind: "confirmation_required" });
+    const [after] = (await handle.db.execute(sql`SELECT status, unsubscribed_at FROM newsletter_subscriptions`)) as unknown as { status: string; unsubscribed_at: Date | null }[];
+    expect(after.status).toBe("pending");
+    expect(after.unsubscribed_at).toBeNull();
   });
 
   it("donation intent + charge are idempotent and the charge transition is conditional", async () => {
@@ -225,5 +265,19 @@ describe.skipIf(!url)("Repositórios Drizzle contra PostgreSQL real", () => {
     } finally {
       await other.close();
     }
+  });
+
+  it("purge alert log records alerts in audit_events and only matches the same step inside the window", async () => {
+    const log = createDrizzlePurgeAlertLog(handle.db);
+    const now = new Date();
+    expect(await log.hasAlertSince("triage", new Date(now.getTime() - 86_400_000))).toBe(false);
+
+    await log.recordAlert("triage", "ref12345", now);
+    expect(await log.hasAlertSince("triage", new Date(now.getTime() - 86_400_000))).toBe(true);
+    expect(await log.hasAlertSince("contacts", new Date(now.getTime() - 86_400_000))).toBe(false);
+    expect(await log.hasAlertSince("triage", new Date(now.getTime() + 1000))).toBe(false);
+
+    const row = (await handle.db.execute(sql`SELECT actor, action, entity_type, entity_id, metadata FROM audit_events`))[0];
+    expect(row).toEqual({ actor: "system", action: "purge.alert_sent", entity_type: "purge", entity_id: null, metadata: { step: "triage", reference: "ref12345" } });
   });
 });

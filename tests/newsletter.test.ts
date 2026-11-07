@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleNewsletterConfirmation, handleNewsletterSubscription } from "../src/presentation/forms/newsletter.js";
+import { handleNewsletterConfirmation, handleNewsletterSubscription, handleNewsletterUnsubscribe } from "../src/presentation/forms/newsletter.js";
 import type { NewsletterRepository } from "../src/application/ports/newsletter-repository.js";
 import { randomToken, sha256Hex } from "../src/infrastructure/crypto/hashing.js";
 import { SITE, failTurnstile, jsonRequest, passTurnstile, recordingNotifier } from "./helpers.js";
@@ -7,6 +7,8 @@ import { SITE, failTurnstile, jsonRequest, passTurnstile, recordingNotifier } fr
 interface Row {
   status: string;
   tokenHash: string | null;
+  unsubHash: string | null;
+  unsubExpiresAt: number;
   sentAt: number;
 }
 
@@ -14,21 +16,46 @@ function inMemoryRepo(): NewsletterRepository & { rows: Map<string, Row> } {
   const rows = new Map<string, Row>();
   return {
     rows,
-    upsertPending: vi.fn(async ({ email, confirmTokenHash, resendCooldownSeconds, now }) => {
+    upsertPending: vi.fn(async ({ email, confirmTokenHash, unsubscribeTokenHash, unsubscribeExpiresAt, resendCooldownSeconds, now }) => {
       const row = rows.get(email);
       if (!row) {
-        rows.set(email, { status: "pending", tokenHash: confirmTokenHash, sentAt: now.getTime() });
+        rows.set(email, {
+          status: "pending",
+          tokenHash: confirmTokenHash,
+          unsubHash: unsubscribeTokenHash,
+          unsubExpiresAt: unsubscribeExpiresAt.getTime(),
+          sentAt: now.getTime(),
+        });
         return { kind: "confirmation_required" as const };
       }
       if (row.status === "confirmed") return { kind: "no_action" as const };
       if (now.getTime() - row.sentAt < resendCooldownSeconds * 1000) return { kind: "no_action" as const };
-      Object.assign(row, { tokenHash: confirmTokenHash, sentAt: now.getTime() });
+      Object.assign(row, {
+        status: "pending",
+        tokenHash: confirmTokenHash,
+        unsubHash: unsubscribeTokenHash,
+        unsubExpiresAt: unsubscribeExpiresAt.getTime(),
+        sentAt: now.getTime(),
+      });
       return { kind: "confirmation_required" as const };
     }),
     confirm: vi.fn(async (hash) => {
       for (const row of rows.values()) {
         if (row.tokenHash === hash && row.status === "pending") {
           Object.assign(row, { status: "confirmed", tokenHash: null });
+          return true;
+        }
+      }
+      return false;
+    }),
+    unsubscribe: vi.fn(async (hash, now) => {
+      for (const row of rows.values()) {
+        if (
+          row.unsubHash === hash &&
+          ["pending", "confirmed"].includes(row.status) &&
+          row.unsubExpiresAt > now.getTime()
+        ) {
+          Object.assign(row, { status: "unsubscribed", unsubHash: null, tokenHash: null });
           return true;
         }
       }
@@ -44,6 +71,7 @@ function setup(turnstile = passTurnstile) {
   const repo = inMemoryRepo();
   const notifier = recordingNotifier();
   const links: string[] = [];
+  const unsubLinks: string[] = [];
   const deps = {
     turnstile,
     newsletter: () => ({
@@ -55,9 +83,14 @@ function setup(turnstile = passTurnstile) {
         links.push(url);
         return url;
       },
+      unsubscribeUrl: (token: string) => {
+        const url = `${SITE}/newsletter/cancelar/#token=${token}`;
+        unsubLinks.push(url);
+        return url;
+      },
     }),
   };
-  return { repo, notifier, links, deps };
+  return { repo, notifier, links, unsubLinks, deps };
 }
 
 describe("POST /api/forms/newsletter", () => {
@@ -162,5 +195,84 @@ describe("POST /api/forms/newsletter", () => {
 
     const malformed = await handleNewsletterConfirmation(jsonRequest("/api/forms/newsletter/confirm", { token: "x" }), env, confirmDeps);
     expect(malformed.status).toBe(400);
+  });
+});
+
+describe("POST /api/forms/newsletter/unsubscribe", () => {
+  const subscribe = async (ctx: ReturnType<typeof setup>) => {
+    await handleNewsletterSubscription(jsonRequest("/api/forms/newsletter", payload, { Accept: "application/json" }), env, ctx.deps);
+    return ctx.unsubLinks[0].split("#token=")[1];
+  };
+  const unsub = (ctx: ReturnType<typeof setup>, token: unknown) =>
+    handleNewsletterUnsubscribe(jsonRequest("/api/forms/newsletter/unsubscribe", { token }), env, { newsletter: ctx.deps.newsletter });
+
+  it("puts a one-time unsubscribe link in the e-mail and persists only its hash", async () => {
+    const ctx = setup();
+    const token = await subscribe(ctx);
+
+    expect(ctx.unsubLinks[0]).toMatch(/\/newsletter\/cancelar\/#token=[A-Za-z0-9_-]{43}$/);
+    expect(ctx.notifier.sent[0].text ?? JSON.stringify(ctx.notifier.sent[0])).toContain(`/newsletter/cancelar/#token=${token}`);
+    expect(ctx.repo.rows.get("leitor@example.com")?.unsubHash).toBe(await sha256Hex(token));
+    expect(token).not.toBe(ctx.links[0].split("#token=")[1]);
+  });
+
+  it("unsubscribes once and answers the same neutral 200 on reuse (idempotent)", async () => {
+    const ctx = setup();
+    const token = await subscribe(ctx);
+
+    const first = await unsub(ctx, token);
+    expect(first.status).toBe(200);
+    expect(ctx.repo.rows.get("leitor@example.com")?.status).toBe("unsubscribed");
+    expect(ctx.repo.rows.get("leitor@example.com")?.unsubHash).toBeNull();
+
+    const second = await unsub(ctx, token);
+    expect(second.status).toBe(200);
+    expect(await second.text()).toBe(await first.clone().text());
+  });
+
+  it("gives the same neutral answer for unknown tokens and 400 for malformed ones", async () => {
+    const ctx = setup();
+    const known = await subscribe(ctx);
+    const unknown = await unsub(ctx, randomToken());
+    expect(unknown.status).toBe(200);
+    expect(ctx.repo.rows.get("leitor@example.com")?.status).toBe("pending");
+    expect(known).toBeTruthy();
+
+    expect((await unsub(ctx, "x")).status).toBe(400);
+    expect((await unsub(ctx, undefined)).status).toBe(400);
+  });
+
+  it("does not unsubscribe with an expired token", async () => {
+    const ctx = setup();
+    const token = await subscribe(ctx);
+    ctx.repo.rows.get("leitor@example.com")!.unsubExpiresAt = Date.now() - 1000;
+
+    expect((await unsub(ctx, token)).status).toBe(200);
+    expect(ctx.repo.rows.get("leitor@example.com")?.status).toBe("pending");
+  });
+
+  it("never changes state on GET and requires an explicit POST", async () => {
+    const ctx = setup();
+    await subscribe(ctx);
+    const res = await handleNewsletterUnsubscribe(
+      new Request("https://api.purelifeministriesbrasil.org/api/forms/newsletter/unsubscribe", { method: "GET", headers: { Origin: SITE } }),
+      env,
+      { newsletter: ctx.deps.newsletter }
+    );
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(ctx.repo.unsubscribe).not.toHaveBeenCalled();
+  });
+
+  it("allows a new subscription after unsubscribing only through a fresh explicit opt-in", async () => {
+    const ctx = setup();
+    const token = await subscribe(ctx);
+    await unsub(ctx, token);
+    ctx.repo.rows.get("leitor@example.com")!.sentAt = 0; // fora do cooldown
+
+    await handleNewsletterSubscription(jsonRequest("/api/forms/newsletter", payload, { Accept: "application/json" }), env, ctx.deps);
+    const row = ctx.repo.rows.get("leitor@example.com")!;
+    expect(row.status).toBe("pending"); // exige nova confirmação (double opt-in)
+    expect(row.unsubHash).not.toBeNull();
+    expect(ctx.notifier.sent).toHaveLength(2);
   });
 });
