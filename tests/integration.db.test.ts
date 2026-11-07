@@ -203,6 +203,70 @@ describe.skipIf(!url)("Repositórios Drizzle contra PostgreSQL real", () => {
     expect(await handleScheduledPurge(createDrizzlePurgeRepository(handle.db))).toEqual({ triagePurged: 0, contactsPurged: 0 });
   });
 
+  it("withCreationLock serializes concurrent creations for the same intent and lets different intents run in parallel", async () => {
+    const other = createDbClient(url as string);
+    try {
+      const a = createDrizzleDonationRepository(handle.db, enc, hashEmail);
+      const b = createDrizzleDonationRepository(other.db, enc, hashEmail);
+      const events: string[] = [];
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const intent = crypto.randomUUID();
+
+      const first = a.withCreationLock(intent, async (repo) => {
+        events.push("a:start");
+        expect(await repo.findFirstCharge(crypto.randomUUID())).toBeNull(); // repositório da transação funciona
+        await sleep(300);
+        events.push("a:end");
+      });
+      await sleep(80);
+      const second = b.withCreationLock(intent, async () => {
+        events.push("b:start");
+      });
+      await Promise.all([first, second]);
+      expect(events).toEqual(["a:start", "a:end", "b:start"]);
+
+      const parallel: string[] = [];
+      await Promise.all([
+        a.withCreationLock(crypto.randomUUID(), async () => {
+          parallel.push("x:start");
+          await sleep(200);
+          parallel.push("x:end");
+        }),
+        (async () => {
+          await sleep(60);
+          await b.withCreationLock(crypto.randomUUID(), async () => void parallel.push("y:start"));
+        })(),
+      ]);
+      expect(parallel).toEqual(["x:start", "y:start", "x:end"]);
+    } finally {
+      await other.close();
+    }
+  });
+
+  it("withCreationLock: transação ociosa além do teto é encerrada pelo Postgres e o bloqueio é liberado", async () => {
+    const other = createDbClient(url as string);
+    try {
+      const a = createDrizzleDonationRepository(handle.db, enc, hashEmail, { idleInTransactionTimeoutMs: 300 });
+      const b = createDrizzleDonationRepository(other.db, enc, hashEmail, { lockTimeoutMs: 5000 });
+      const intent = crypto.randomUUID();
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+      // Simula o Worker travado no gateway sob o bloqueio: nenhum comando SQL por mais tempo que o teto.
+      const stuck = a.withCreationLock(intent, async () => {
+        await sleep(1200);
+      });
+      await sleep(80);
+      const started = Date.now();
+      const waiter = b.withCreationLock(intent, async () => "acquired");
+
+      await expect(waiter).resolves.toBe("acquired");
+      expect(Date.now() - started).toBeLessThan(1500); // liberou pelo teto, não pelo fim do `work` travado
+      await expect(stuck).rejects.toThrow();
+    } finally {
+      await other.close();
+    }
+  });
+
   it("purge alert log records alerts in audit_events and only matches the same step inside the window", async () => {
     const log = createDrizzlePurgeAlertLog(handle.db);
     const now = new Date();

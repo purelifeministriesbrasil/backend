@@ -6,9 +6,13 @@ export interface CreatePixInput {
   amountCents: number;
   description: string;
   donorEmail?: string;
-  /** Chave estável por intenção de doação: repassada ao provedor para evitar cobrança duplicada. */
+  /**
+   * Chave estável por intenção de doação. Só o Mercado Pago a recebe como header de idempotência;
+   * o Asaas não a recebe (a existência de um header equivalente não está comprovada na documentação)
+   * e é conciliado por `externalReference`.
+   */
   idempotencyKey: string;
-  /** Referência interna (id da intenção) gravada no provedor para conciliação. */
+  /** Referência interna (id da intenção) gravada no provedor; o Asaas a usa para localizar cobrança já criada. */
   externalReference: string;
 }
 
