@@ -2,6 +2,7 @@
   "name": "purelife-api",
   "version": "1.0.0",
   "type": "module",
+  "packageManager": "pnpm@12.18.0",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
@@ -12,7 +13,8 @@
     "verify:boundaries": "node ./scripts/verify-boundaries.mjs",
     "db:migrate": "node ./scripts/migrate.mjs",
     "db:migrate:dry-run": "node ./scripts/migrate.mjs --dry-run",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test"
+    "verify": "pnpm lint && pnpm typecheck && pnpm test",
+    "verify:pnpm": "node ./scripts/verify-package-manager.mjs"
   },
   "dependencies": {
     "drizzle-orm": "^0.39.3",
