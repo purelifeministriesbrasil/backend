@@ -7,7 +7,9 @@ type Level = "info" | "warn" | "error";
  * Todo contexto passa pelo scrubber: PII e relatos nunca chegam à telemetria.
  */
 export function log(level: Level, event: string, context: Record<string, unknown> = {}): void {
-  const line = JSON.stringify({ level, event, ts: new Date().toISOString(), ...scrubObject(context) });
+  const reserved = { level, event, ts: new Date().toISOString() };
+  // Campos reservados vêm primeiro e não podem ser sobrescritos por chaves homônimas do contexto.
+  const line = JSON.stringify(Object.assign({ ...reserved }, scrubObject(context), reserved));
   if (level === "error") console.error(line);
   else if (level === "warn") console.warn(line);
   else console.log(line);
