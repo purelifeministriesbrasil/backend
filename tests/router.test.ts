@@ -94,6 +94,20 @@ describe("Hono Router & Security Middleware Integration", () => {
     expect(res.status).toBe(503);
   });
 
+  it("fails closed with 503 on the payment webhook when the payment provider is not configured", async () => {
+    const testApp = createApp({ verifyTurnstile: async () => true });
+    const res = await testApp.fetch(
+      new Request("https://api.example.test/api/webhooks/payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "PAYMENT_RECEIVED", payment: { id: "pay_x" } }),
+      }),
+      validEnv({ PAYMENT_PROVIDER: undefined })
+    );
+    expect(res.status).toBe(503);
+    expect(await res.text()).not.toMatch(/PAYMENT_PROVIDER|asaas|mercadopago/i);
+  });
+
   it("refuses Turnstile test secret keys in production", async () => {
     const testApp = createApp({ verifyTurnstile: async () => true });
     const res = await testApp.fetch(

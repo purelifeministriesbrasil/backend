@@ -58,7 +58,6 @@ export class ConfigError extends Error {
 
 const TURNSTILE_TEST_SECRET = /^[123]x0+A{2}$/;
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
-const ASAAS_PRODUCTION_BASE_URL = "https://api.asaas.com/v3";
 
 function nonEmpty(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
@@ -68,8 +67,13 @@ function str(env: Env, key: string): string {
   return (env[key] as string).trim();
 }
 
+/** Únicos valores que relaxam controles (CORS de localhost, chave de teste do Turnstile). */
+const NON_PRODUCTION_ENVIRONMENTS = new Set(["development", "test"]);
+
+/** Fail-closed: ENVIRONMENT ausente, vazio ou desconhecido é tratado como produção. */
 export function isProduction(env: Env): boolean {
-  return env.ENVIRONMENT === "production";
+  const value = typeof env.ENVIRONMENT === "string" ? env.ENVIRONMENT.trim().toLowerCase() : "";
+  return !NON_PRODUCTION_ENVIRONMENTS.has(value);
 }
 
 function base64ByteLength(value: string): number | null {
@@ -175,9 +179,9 @@ export function readPaymentConfig(env: Env): PaymentConfig {
 
   if (provider === "asaas") {
     requireKeys(env, "payments", ["ASAAS_API_KEY", "ASAAS_WEBHOOK_SECRET", "ASAAS_DONATION_CUSTOMER_ID"]);
-    const apiBaseUrl = nonEmpty(env.ASAAS_API_BASE_URL)
-      ? str(env, "ASAAS_API_BASE_URL").replace(/\/+$/, "")
-      : ASAAS_PRODUCTION_BASE_URL;
+    // Sem padrão: o ambiente do Asaas (sandbox ou produção) precisa ser escolhido explicitamente.
+    if (!nonEmpty(env.ASAAS_API_BASE_URL)) throw new ConfigError(["ASAAS_API_BASE_URL"], "payments");
+    const apiBaseUrl = str(env, "ASAAS_API_BASE_URL").replace(/\/+$/, "");
     if (!apiBaseUrl.startsWith("https://")) throw new ConfigError(["ASAAS_API_BASE_URL"], "payments");
     return {
       provider,
