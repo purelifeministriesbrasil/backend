@@ -1,5 +1,7 @@
 import type { z } from "zod/mini";
 import { assertBodySize } from "../infrastructure/security/request-guards.js";
+import { errorCode, log } from "../infrastructure/observability/logger.js";
+import type { UseCaseResult } from "../application/ports/result.js";
 
 export const NO_STORE = { "Content-Type": "application/json", "Cache-Control": "no-store" } as const;
 
@@ -52,3 +54,12 @@ export const serviceUnavailable = () =>
 
 export const internalError = () =>
   json(500, { error: "internal_error", message: "Não foi possível concluir a solicitação. Tente novamente." });
+
+/**
+ * Registra falha de infraestrutura de um caso de uso: só operação, código estável e código/nome do erro
+ * original (nunca a mensagem, que pode conter SQL, host ou credenciais). Outras falhas não são logadas aqui.
+ */
+export function logUseCaseFailure(operation: string, result: UseCaseResult<unknown>): void {
+  if (result.ok || result.kind !== "infrastructure") return;
+  log("error", "usecase.infrastructure_failure", { operation, error: result.error, cause: errorCode(result.cause) });
+}

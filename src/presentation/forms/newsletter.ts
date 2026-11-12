@@ -11,7 +11,7 @@ import {
   unsubscribeNewsletter,
   type SubscribeNewsletterDeps,
 } from "../../application/usecases/subscribe-newsletter.js";
-import { clientIp, json, readJson, serviceUnavailable, type TurnstileVerifier } from "../http.js";
+import { clientIp, json, logUseCaseFailure, readJson, serviceUnavailable, type TurnstileVerifier } from "../http.js";
 
 const MAX_BYTES = 1024;
 const NEUTRAL_MESSAGE = "Se o endereço informado puder receber mensagens, você receberá uma confirmação em breve.";
@@ -77,7 +77,10 @@ export async function handleNewsletterSubscription(
     { email: parsed.data.email, policyVersion: parsed.data.policyVersion },
     deps.newsletter()
   );
-  if (!result.ok) return serviceUnavailable();
+  if (!result.ok) {
+    logUseCaseFailure("newsletter-subscribe", result);
+    return serviceUnavailable();
+  }
 
   return neutral();
 }
@@ -99,7 +102,10 @@ export async function handleNewsletterConfirmation(
   if (!parsed.success) return json(400, { error: "invalid_token", message: "Link de confirmação inválido." });
 
   const result = await confirmNewsletter(parsed.data.token, deps.newsletter());
-  if (!result.ok) return serviceUnavailable();
+  if (!result.ok) {
+    logUseCaseFailure("newsletter-confirm", result);
+    return serviceUnavailable();
+  }
   if (!result.value.confirmed) {
     return json(410, { error: "token_expired", message: "Este link expirou ou já foi utilizado." });
   }
@@ -128,6 +134,9 @@ export async function handleNewsletterUnsubscribe(
   if (!parsed.success) return json(400, { error: "invalid_token", message: "Link de descadastro inválido." });
 
   const result = await unsubscribeNewsletter(parsed.data.token, deps.newsletter());
-  if (!result.ok) return serviceUnavailable();
+  if (!result.ok) {
+    logUseCaseFailure("newsletter-unsubscribe", result);
+    return serviceUnavailable();
+  }
   return json(200, { ok: true, message: UNSUBSCRIBE_NEUTRAL_MESSAGE });
 }

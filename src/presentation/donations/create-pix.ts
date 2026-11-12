@@ -10,6 +10,7 @@ import {
   turnstileFailed,
   validationFailed,
   type TurnstileVerifier,
+  logUseCaseFailure,
 } from "../http.js";
 
 const MAX_BYTES = 4096;
@@ -35,6 +36,7 @@ export async function handleCreatePix(
 
   const result = await createPixCharge(parsed.data, idempotencyKey, deps.donations());
   if (result.ok) return json(200, result.value);
+  logUseCaseFailure("create-pix", result);
 
   switch (result.error) {
     case "idempotency_conflict":

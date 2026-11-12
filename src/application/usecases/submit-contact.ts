@@ -40,8 +40,8 @@ export async function submitContact(
         grantedAt: now,
       },
     });
-  } catch {
-    return { ok: false, kind: "infrastructure", error: "contact_persistence_failed", retryable: true };
+  } catch (cause) {
+    return { ok: false, kind: "infrastructure", error: "contact_persistence_failed", retryable: true, cause };
   }
 
   if (outcome.created && deps.notifier) {

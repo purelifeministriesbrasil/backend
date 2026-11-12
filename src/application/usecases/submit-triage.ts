@@ -49,9 +49,9 @@ export async function submitTriage(
         grantedAt: now,
       },
     });
-  } catch {
-    // A causa é registrada pelo adaptador; ao cliente só chega um código estável e sem detalhes.
-    return { ok: false, kind: "infrastructure", error: "triage_persistence_failed", retryable: true };
+  } catch (cause) {
+    // A causa segue em `cause` e é registrada (só o código) pela apresentação; ao cliente só chega um código estável e sem detalhes.
+    return { ok: false, kind: "infrastructure", error: "triage_persistence_failed", retryable: true, cause };
   }
 
   if (outcome.created && deps.notifier) {

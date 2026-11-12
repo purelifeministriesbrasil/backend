@@ -10,6 +10,7 @@ import {
   turnstileFailed,
   validationFailed,
   type TurnstileVerifier,
+  logUseCaseFailure,
 } from "../http.js";
 
 const MAX_BYTES = 8192;
@@ -34,7 +35,10 @@ export async function handleContactSubmission(
   if (!(await deps.turnstile.verify(parsed.data.turnstileToken, clientIp(request)))) return turnstileFailed();
 
   const result = await submitContact(parsed.data, idempotencyKey, deps.contact());
-  if (!result.ok) return internalError();
+  if (!result.ok) {
+    logUseCaseFailure("contact", result);
+    return internalError();
+  }
 
   return json(200, { ok: true, referenceCode: result.value.referenceCode });
 }

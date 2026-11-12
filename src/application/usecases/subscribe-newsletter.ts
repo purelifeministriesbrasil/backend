@@ -51,8 +51,8 @@ export async function subscribeNewsletter(
       resendCooldownSeconds: NEWSLETTER_RESEND_COOLDOWN_SECONDS,
       now,
     });
-  } catch {
-    return { ok: false, kind: "infrastructure", error: "newsletter_persistence_failed", retryable: true };
+  } catch (cause) {
+    return { ok: false, kind: "infrastructure", error: "newsletter_persistence_failed", retryable: true, cause };
   }
 
   if (outcome.kind === "no_action") {
@@ -78,8 +78,8 @@ export async function confirmNewsletter(
   try {
     const confirmed = await deps.repo.confirm(await deps.tokens.hash(token), deps.now?.() ?? new Date());
     return { ok: true, value: { confirmed } };
-  } catch {
-    return { ok: false, kind: "infrastructure", error: "newsletter_persistence_failed", retryable: true };
+  } catch (cause) {
+    return { ok: false, kind: "infrastructure", error: "newsletter_persistence_failed", retryable: true, cause };
   }
 }
 
@@ -94,7 +94,7 @@ export async function unsubscribeNewsletter(
   try {
     const unsubscribed = await deps.repo.unsubscribe(await deps.tokens.hash(token), deps.now?.() ?? new Date());
     return { ok: true, value: { unsubscribed } };
-  } catch {
-    return { ok: false, kind: "infrastructure", error: "newsletter_persistence_failed", retryable: true };
+  } catch (cause) {
+    return { ok: false, kind: "infrastructure", error: "newsletter_persistence_failed", retryable: true, cause };
   }
 }
