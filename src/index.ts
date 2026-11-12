@@ -179,7 +179,9 @@ export function createApp(options: AppOptions = {}) {
     });
   app.post("/api/forms/contato", rateLimited("contato", "RL_CONTACT"));
   app.post("/api/forms/triagem", rateLimited("triagem", "RL_TRIAGE"));
-  app.post("/api/forms/newsletter", rateLimited("newsletter", "RL_NEWSLETTER"));
+  app.post("/api/forms/newsletter", rateLimited("newsletter-subscribe", "RL_NEWSLETTER"));
+  app.post("/api/forms/newsletter/confirm", rateLimited("newsletter-confirm", "RL_NEWSLETTER"));
+  app.post("/api/forms/newsletter/unsubscribe", rateLimited("newsletter-unsubscribe", "RL_NEWSLETTER"));
   app.post("/api/donations/create-pix", rateLimited("create-pix", "RL_DONATION"));
 
   app.get("/health", () => handleHealth());

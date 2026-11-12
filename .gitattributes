@@ -1,0 +1,4 @@
+# Migrations e scripts sempre em LF, independentemente de core.autocrlf (o checksum é normalizado, mas
+# manter o checkout idêntico ao do CI evita diffs espúrios).
+*.sql text eol=lf
+*.mjs text eol=lf

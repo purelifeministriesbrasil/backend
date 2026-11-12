@@ -2,7 +2,7 @@
 // Verifica: (1) package.json fixa `pnpm@X.Y.Z` exato; (2) nenhum workflow repete `version:` em pnpm/action-setup
 // (a action lê `packageManager`; duas fontes divergiriam); (3) com --runtime, o `pnpm` em execução é o fixado.
 // Esta cópia deve ser idêntica nos repositórios que a usam.
-import { execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -38,7 +38,8 @@ for (const f of workflowsWithPnpmVersion(".github/workflows")) {
   errors.push(`.github/workflows/${f}: remova "version:" de pnpm/action-setup; a versão vem de packageManager.`);
 }
 if (process.argv.includes("--runtime") && pinned) {
-  const running = execFileSync("pnpm", ["--version"], { encoding: "utf8" }).trim();
+  // execSync com comando constante: no Windows o pnpm é um shim .cmd que execFile não executa sem shell.
+  const running = execSync("pnpm --version", { encoding: "utf8" }).trim();
   if (running !== pinned) errors.push(`pnpm em execução (${running}) difere do fixado em package.json (${pinned}).`);
 }
 

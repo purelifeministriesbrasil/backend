@@ -100,7 +100,55 @@ describe("rate limiting no roteador", () => {
     const pix = await app.fetch(postJson("/api/donations/create-pix", { amountCents: 5000 }), env);
     expect(news.status).toBe(429);
     expect(pix.status).toBe(429);
-    expect(RL_NEWSLETTER.limit).toHaveBeenCalledWith({ key: "203.0.113.7" });
+    expect(RL_NEWSLETTER.limit).toHaveBeenCalledWith({ key: "newsletter-subscribe:203.0.113.7" });
+  });
+
+  describe("newsletter: inscrição, confirmação e cancelamento têm contadores independentes no RL_NEWSLETTER", () => {
+    const token = "A".repeat(43);
+    const routes = [
+      { id: "newsletter-subscribe", path: "/api/forms/newsletter", body: { email: "a@example.com", policyVersion: "2026-09-19" } },
+      { id: "newsletter-confirm", path: "/api/forms/newsletter/confirm", body: { token } },
+      { id: "newsletter-unsubscribe", path: "/api/forms/newsletter/unsubscribe", body: { token } },
+    ] as const;
+
+    it.each(routes)("$id em enforce: 429 com Retry-After acima do limite", async ({ id, path, body }) => {
+      const RL_NEWSLETTER = fakeBinding(0);
+      const res = await app.fetch(postJson(path, body), validEnv({ RATE_LIMIT_MODE: "enforce", RL_NEWSLETTER }));
+      expect(res.status).toBe(429);
+      expect(res.headers.get("Retry-After")).toBe("60");
+      expect(RL_NEWSLETTER.limit).toHaveBeenCalledWith({ key: `${id}:203.0.113.7` });
+    });
+
+    it.each(routes)("$id em log: acima do limite só registra would_block e segue para o handler", async ({ id, path, body }) => {
+      const RL_NEWSLETTER = fakeBinding(0);
+      const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const res = await app.fetch(postJson(path, body), validEnv({ RATE_LIMIT_MODE: "log", RL_NEWSLETTER }));
+        expect(res.status).not.toBe(429);
+        const lines = [...spy.mock.calls, ...warn.mock.calls].map((c) => String(c[0]));
+        expect(lines.some((l) => l.includes("rate_limit.would_block") && l.includes(id))).toBe(true);
+      } finally {
+        spy.mockRestore();
+        warn.mockRestore();
+      }
+    });
+
+    it("esgotar a confirmação não afeta inscrição nem cancelamento do mesmo IP", async () => {
+      const RL_NEWSLETTER = fakeBinding(1);
+      const env = validEnv({ RATE_LIMIT_MODE: "enforce", RL_NEWSLETTER });
+      const [, confirmB] = [routes[0], routes[1]];
+      expect((await app.fetch(postJson(confirmB.path, confirmB.body), env)).status).not.toBe(429);
+      expect((await app.fetch(postJson(confirmB.path, confirmB.body), env)).status).toBe(429);
+      for (const r of [routes[0], routes[2]]) {
+        expect((await app.fetch(postJson(r.path, r.body), env)).status).not.toBe(429);
+      }
+      expect([...RL_NEWSLETTER.hits.keys()].sort()).toEqual([
+        "newsletter-confirm:203.0.113.7",
+        "newsletter-subscribe:203.0.113.7",
+        "newsletter-unsubscribe:203.0.113.7",
+      ]);
+    });
   });
 
   it("não limita webhook de pagamento, preflight CORS nem /health", async () => {

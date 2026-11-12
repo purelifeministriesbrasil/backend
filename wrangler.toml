@@ -24,7 +24,7 @@ PIX_EXPIRATION_MINUTES = "60"
 TRIAGE_KEY_CURRENT_VERSION = "1"
 EMAIL_FROM = "Pure Life Ministries Brasil <nao-responda@purelifeministriesbrasil.org>"
 STAFF_NOTIFICATION_EMAIL = "purelifeministriesbrasil1986@gmail.com"
-# Só se aplica ao provedor Asaas, se vier a ser escolhido (produção: https://api.asaas.com/v3;
+# Obrigatório quando PAYMENT_PROVIDER = "asaas" (sem padrão; ausente → 503). Produção: https://api.asaas.com/v3;
 # sandbox: https://api-sandbox.asaas.com/v3).
 # ASAAS_API_BASE_URL = "https://api.asaas.com/v3"
 # Limitação de taxa por IP e endpoint (R5): off | log | enforce. "log" só registra `rate_limit.would_block`

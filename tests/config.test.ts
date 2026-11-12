@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ConfigError,
+  isProduction,
   readCryptoConfig,
   readDatabaseUrl,
   readPaymentConfig,
@@ -18,6 +19,32 @@ function configError(fn: () => unknown): ConfigError {
   }
   throw new Error("expected ConfigError");
 }
+
+describe("Ambiente fail-closed", () => {
+  it.each(["development", "test", " Development "])("reconhece %j como não produção", (value) => {
+    expect(isProduction(validEnv({ ENVIRONMENT: value }))).toBe(false);
+  });
+
+  it.each([["production"], [undefined], [""], ["prod"], ["producton"], ["staging"]])(
+    "trata ENVIRONMENT=%j como produção (ausente ou desconhecido não relaxa controles)",
+    (value) => {
+      expect(isProduction(validEnv({ ENVIRONMENT: value }))).toBe(true);
+    }
+  );
+
+  it("com ENVIRONMENT ausente recusa a chave de teste do Turnstile", () => {
+    expect(() => readTurnstileSecret(validEnv({ ENVIRONMENT: undefined }))).toThrow(ConfigError);
+  });
+
+  it("exige ASAAS_API_BASE_URL explícito quando o provedor é Asaas (sem cair em produção por padrão)", () => {
+    expect(configError(() => readPaymentConfig(validEnv({ ASAAS_API_BASE_URL: undefined }))).invalidKeys).toEqual([
+      "ASAAS_API_BASE_URL",
+    ]);
+    expect(configError(() => readPaymentConfig(validEnv({ ASAAS_API_BASE_URL: "  " }))).invalidKeys).toEqual([
+      "ASAAS_API_BASE_URL",
+    ]);
+  });
+});
 
 describe("Configuração fail-closed", () => {
   it("prefers the Hyperdrive connection string and falls back to DATABASE_URL", () => {

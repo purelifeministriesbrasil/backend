@@ -106,6 +106,27 @@ describe("POST /api/forms/contato", () => {
     expect(text).not.toContain("constraint");
   });
 
+  it("logs the infrastructure failure with only the error code, never the driver message", async () => {
+    const repo = inMemoryRepo();
+    repo.createWithConsent = vi.fn(async () => {
+      throw Object.assign(new Error("connection to db.internal:5432 failed password=hunter2"), { code: "ECONNREFUSED" });
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await handleContactSubmission(
+        jsonRequest("/api/forms/contato", validContact, { "Idempotency-Key": crypto.randomUUID() }),
+        env,
+        { turnstile: passTurnstile, contact: () => ({ repo, notifier: null }) }
+      );
+      const lines = errors.mock.calls.map((c) => String(c[0]));
+      const entry = lines.map((l) => JSON.parse(l) as Record<string, unknown>).find((e) => e.event === "usecase.infrastructure_failure");
+      expect(entry).toMatchObject({ level: "error", operation: "contact", error: "contact_persistence_failed", cause: "ECONNREFUSED" });
+      expect(lines.join("\n")).not.toMatch(/hunter2|db\.internal/);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it("rejects cross-site origins with 403", async () => {
     const res = await handleContactSubmission(
       jsonRequest("/api/forms/contato", validContact, { "Idempotency-Key": crypto.randomUUID(), Origin: "https://evil.example" }),

@@ -10,6 +10,7 @@ import {
   turnstileFailed,
   validationFailed,
   type TurnstileVerifier,
+  logUseCaseFailure,
 } from "../http.js";
 
 const MAX_BYTES = 8192;
@@ -34,7 +35,10 @@ export async function handleTriageSubmission(
   if (!(await deps.turnstile.verify(parsed.data.turnstileToken, clientIp(request)))) return turnstileFailed();
 
   const result = await submitTriage(parsed.data, idempotencyKey, deps.triage());
-  if (!result.ok) return internalError();
+  if (!result.ok) {
+    logUseCaseFailure("triage", result);
+    return internalError();
+  }
 
   return json(200, result.value);
 }

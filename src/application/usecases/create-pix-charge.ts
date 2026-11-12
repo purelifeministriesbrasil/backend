@@ -49,8 +49,8 @@ export async function createPixCharge(
       frequency: input.frequency,
       donorEmail: input.donorEmail,
     });
-  } catch {
-    return { ok: false, kind: "infrastructure", error: "donation_persistence_failed", retryable: true };
+  } catch (cause) {
+    return { ok: false, kind: "infrastructure", error: "donation_persistence_failed", retryable: true, cause };
   }
 
   if (intent.amountCents !== input.amountCents || intent.frequency !== input.frequency) {
@@ -100,7 +100,7 @@ export async function createPixCharge(
       if (!response) throw new Error("charge_without_pix_payload");
       return { ok: true as const, value: response };
     });
-  } catch {
-    return { ok: false, kind: "infrastructure", error: "donation_persistence_failed", retryable: true };
+  } catch (cause) {
+    return { ok: false, kind: "infrastructure", error: "donation_persistence_failed", retryable: true, cause };
   }
 }

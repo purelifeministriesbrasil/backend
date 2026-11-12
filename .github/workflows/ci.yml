@@ -62,7 +62,9 @@ jobs:
       - name: Apply migrations (drizzle/ is the single source of truth)
         run: pnpm db:migrate
 
-      - name: Verify anon cannot read sensitive tables
+      # Prova só a ausência de GRANT (REVOKE da 0002). A prova de que a RLS bloqueia mesmo com GRANT
+      # explícito, com controle negativo, está em tests/rls.db.test.ts (executado em "pnpm test").
+      - name: Verify anon has no table privileges (REVOKE)
         run: |
           if psql "$DATABASE_URL" -c "SET ROLE anon; SELECT 1 FROM triage_submissions LIMIT 1;" 2>/dev/null; then
             echo "anon conseguiu ler triage_submissions"; exit 1
