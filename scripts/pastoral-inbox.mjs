@@ -1,5 +1,5 @@
 // scripts/pastoral-inbox.mjs — caixa pastoral via linha de comando (ponte até existir um painel dedicado).
-// Os dados de triagem/contato são cifrados (AES-256-GCM + AAD): o Table Editor do Supabase mostra só ciphertext.
+// Os dados de triagem/contato são cifrados (AES-256-GCM + AAD): o console do banco mostra só ciphertext.
 // Esta ferramenta decifra LOCALMENTE e registra cada leitura em audit_events (§6.3).
 //
 // Variáveis: DATABASE_URL, TRIAGE_KEY_V1 [, TRIAGE_KEY_V2 ...], OPERATOR (e-mail de quem lê).
@@ -72,11 +72,12 @@ try {
                              FROM triage_submissions WHERE status NOT IN ('closed','purged') ORDER BY created_at`;
     const contacts = await sql`SELECT reference_code, subject, status, created_at
                                FROM contact_submissions WHERE status NOT IN ('closed','purged') ORDER BY created_at`;
+    // Audita antes de exibir: se a auditoria falhar, nada é mostrado (mesma regra de `show`).
+    await audit("inbox.list", "inbox", null, null);
     console.log("Triagens abertas:");
     console.table(triage);
     console.log("Contatos abertos:");
     console.table(contacts);
-    await audit("inbox.list", "inbox", null, null);
   } else if (command === "show") {
     const code = args[0];
     const reason = flag("--reason");
