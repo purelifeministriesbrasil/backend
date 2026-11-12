@@ -22,7 +22,7 @@ export function readRateLimitMode(env: { RATE_LIMIT_MODE?: unknown }): RateLimit
 
 export interface RateLimitCheck {
   binding: RateLimit | undefined;
-  /** Nome estável do endpoint, só para log. */
+  /** Nome estável do endpoint: compõe a chave do contador e aparece no log. */
   endpoint: string;
   mode: RateLimitMode;
   /** IP do cliente (`CF-Connecting-IP`); sem ele não há chave confiável e a requisição passa. */
@@ -38,7 +38,9 @@ export async function shouldBlock({ binding, endpoint, mode, ip }: RateLimitChec
   }
   if (!ip) return false;
   try {
-    const { success } = await binding.limit({ key: ip });
+    // A chave inclui o endpoint: rotas que compartilham um binding (ex.: as três da newsletter em
+    // RL_NEWSLETTER) têm contadores independentes.
+    const { success } = await binding.limit({ key: `${endpoint}:${ip}` });
     if (success) return false;
     log("warn", mode === "enforce" ? "rate_limit.blocked" : "rate_limit.would_block", { endpoint, mode });
     return mode === "enforce";

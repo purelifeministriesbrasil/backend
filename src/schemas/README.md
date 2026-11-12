@@ -10,7 +10,7 @@ mesmas regras e mensagens que a API aplica.
 | `common/` | E-mail, telefone, token do Turnstile, consentimento |
 | `triage/` | Triagem confidencial (`POST /api/forms/triagem`) |
 | `contact/` | Contato institucional (`POST /api/forms/contato`) |
-| `newsletter/` | Inscrição e confirmação da newsletter |
+| `newsletter/` | Inscrição (`POST /api/forms/newsletter`) e token de confirmação/descadastro (`.../confirm`, `.../unsubscribe`) |
 | `donations/` | Cobrança PIX e eventos de webhook |
 
 Cada pasta tem `schema.ts` (regras) e `types.ts` (tipos inferidos); `index.ts` reexporta tudo.

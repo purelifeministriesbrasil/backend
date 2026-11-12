@@ -1,5 +1,5 @@
-import { z } from "zod";
-import { newsletterSchema } from "../../schemas/index.js";
+
+import { newsletterSchema, newsletterTokenSchema } from "../../schemas/index.js";
 import {
   assertBodySize,
   guardRequest,
@@ -82,7 +82,6 @@ export async function handleNewsletterSubscription(
   return neutral();
 }
 
-const confirmSchema = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict();
 
 /** Confirmação via POST disparado pela página /newsletter/confirmar/ (token no fragmento da URL). */
 export async function handleNewsletterConfirmation(
@@ -96,7 +95,7 @@ export async function handleNewsletterConfirmation(
   const read = await readJson(request, 256);
   if (read instanceof Response) return read;
 
-  const parsed = confirmSchema.safeParse(read.body);
+  const parsed = newsletterTokenSchema.safeParse(read.body);
   if (!parsed.success) return json(400, { error: "invalid_token", message: "Link de confirmação inválido." });
 
   const result = await confirmNewsletter(parsed.data.token, deps.newsletter());
@@ -125,7 +124,7 @@ export async function handleNewsletterUnsubscribe(
   const read = await readJson(request, 256);
   if (read instanceof Response) return read;
 
-  const parsed = confirmSchema.safeParse(read.body);
+  const parsed = newsletterTokenSchema.safeParse(read.body);
   if (!parsed.success) return json(400, { error: "invalid_token", message: "Link de descadastro inválido." });
 
   const result = await unsubscribeNewsletter(parsed.data.token, deps.newsletter());
