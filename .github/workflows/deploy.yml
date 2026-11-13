@@ -1,0 +1,90 @@
+name: Deploy API
+
+# Publicação MANUAL do Worker (Actions → Deploy API → Run workflow), sempre a partir de main.
+# Exige o secret CLOUDFLARE_API_TOKEN (permissões: Workers Scripts:Edit, Workers Routes:Edit,
+# Account Settings:Read, Hyperdrive:Read) e pode exigir aprovação no ambiente "production".
+# Migrations NÃO são aplicadas aqui: faça backup (branch no Neon) e rode `pnpm db:migrate` antes.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Destino: workersdev (endereço provisório) ou domain (api.purelifeministriesbrasil.org)"
+        required: true
+        default: workersdev
+        type: choice
+        options: [workersdev, domain]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verificação completa
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Publicar Worker (${{ inputs.target }})
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ inputs.target == 'domain' && 'https://api.purelifeministriesbrasil.org/health' || 'https://purelife-api.purelifeministriesbrasil1986.workers.dev/health' }}
+    env:
+      CLOUDFLARE_ACCOUNT_ID: e1728ab8a6578c45419c0c6e06901ad9
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fail if the Cloudflare token is missing
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: test -n "$CLOUDFLARE_API_TOKEN" || { echo "Secret CLOUDFLARE_API_TOKEN ausente"; exit 1; }
+
+      # Antes da troca de domínio: mesma configuração, publicada em workers.dev em vez da rota do domínio.
+      - name: Prepare workers.dev configuration
+        if: inputs.target == 'workersdev'
+        run: |
+          python3 - <<'PY'
+          import re
+          src = open("wrangler.toml", encoding="utf-8").read()
+          block = re.search(r"\[\[routes\]\]\n(?:[^\[\n].*\n)*", src)
+          assert block, "bloco [[routes]] não encontrado em wrangler.toml"
+          open("wrangler.workersdev.ci.toml", "w", encoding="utf-8").write(src.replace(block.group(0), "workers_dev = true\n"))
+          PY
+
+      - name: Record current deployment (for rollback)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: pnpm exec wrangler deployments list ${{ inputs.target == 'workersdev' && '--config wrangler.workersdev.ci.toml' || '' }} | tail -n 20
+
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: pnpm exec wrangler deploy ${{ inputs.target == 'workersdev' && '--config wrangler.workersdev.ci.toml' || '' }}
+
+      - name: Smoke test /health
+        run: |
+          url="${{ inputs.target == 'domain' && 'https://api.purelifeministriesbrasil.org' || 'https://purelife-api.purelifeministriesbrasil1986.workers.dev' }}"
+          for i in 1 2 3 4 5; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$url/health" || true)"
+            [ "$code" = "200" ] && { echo "health OK"; exit 0; }
+            sleep 10
+          done
+          echo "health check falhou ($code). Reverta: pnpm exec wrangler rollback <version-id>"; exit 1
