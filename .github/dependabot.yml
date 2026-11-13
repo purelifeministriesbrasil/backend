@@ -1,0 +1,26 @@
+# Atualizações automáticas: PRs semanais, agrupados, revisados como qualquer outra mudança
+# (CI completo obrigatório). Atualizações de versão "major" vêm em PRs separados.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: America/Sao_Paulo
+    labels: [dependencies, ci]
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      minor-e-patch:
+        update-types: [minor, patch]

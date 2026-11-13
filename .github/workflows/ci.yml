@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Reutilizado pelo deploy.yml: a publicação só ocorre depois desta mesma verificação.
+  workflow_call:
 
 permissions:
   contents: read
