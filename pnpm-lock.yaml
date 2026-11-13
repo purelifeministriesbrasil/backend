@@ -168,13 +168,13 @@ importers:
     dependencies:
       drizzle-orm:
         specifier: ^0.39.3
-        version: 0.39.3(@cloudflare/workers-types@4.20260702.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(postgres@3.4.9)
+        version: 0.39.3(@cloudflare/workers-types@4.20260702.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(postgres@4.1.0)
       hono:
         specifier: ^4.13.10
         version: 4.13.10
       postgres:
-        specifier: ^3.4.9
-        version: 3.4.9
+        specifier: ^4.1.0
+        version: 4.1.0
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -1713,9 +1713,9 @@ packages:
   postgres-range@1.1.4:
     resolution: {integrity: sha512-i/hbxIE9803Alj/6ytL7UHQxRvZkI9O4Sy+J3HGc4F4oo/2eQAjTSNJ0bfxyse3bH0nuVesCk+3IRLaMtG3H6w==}
 
-  postgres@3.4.9:
-    resolution: {integrity: sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw==}
-    engines: {node: '>=12'}
+  postgres@4.1.0:
+    resolution: {integrity: sha512-s+0WH67YAyLdBQUb6XczbziBhY+C9uiQsg9S8R5RHdZhk6sdyK6202E+T2tXpiInSEEjDLRSJ3OpYBe3PN6MsQ==}
+    engines: {node: '>=18'}
 
   prelude-ls@1.2.1:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
@@ -2780,12 +2780,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  drizzle-orm@0.39.3(@cloudflare/workers-types@4.20260702.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(postgres@3.4.9):
+  drizzle-orm@0.39.3(@cloudflare/workers-types@4.20260702.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(postgres@4.1.0):
     optionalDependencies:
       '@cloudflare/workers-types': 4.20260702.1
       '@neondatabase/serverless': 0.10.4
       '@types/pg': 8.11.6
-      postgres: 3.4.9
+      postgres: 4.1.0
 
   env-paths@3.0.0: {}
 
@@ -3174,7 +3174,7 @@ snapshots:
   postgres-range@1.1.4:
     optional: true
 
-  postgres@3.4.9: {}
+  postgres@4.1.0: {}
 
   prelude-ls@1.2.1: {}
 
