@@ -168,7 +168,7 @@ importers:
     dependencies:
       drizzle-orm:
         specifier: ^0.39.3
-        version: 0.39.3(@cloudflare/workers-types@4.20260702.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(postgres@3.4.9)
+        version: 0.39.3(@cloudflare/workers-types@5.20261110.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(postgres@3.4.9)
       hono:
         specifier: ^4.13.10
         version: 4.13.10
@@ -180,8 +180,8 @@ importers:
         version: 4.6.7
     devDependencies:
       '@cloudflare/workers-types':
-        specifier: ^4.20250224.0
-        version: 4.20260702.1
+        specifier: ^5.20261110.1
+        version: 5.20261110.1
       drizzle-kit:
         specifier: ^0.30.5
         version: 0.30.6(supports-color@7.2.0)
@@ -199,7 +199,7 @@ importers:
         version: 3.2.7(@types/node@26.6.2)(supports-color@7.2.0)
       wrangler:
         specifier: ^4.158.0
-        version: 4.158.0(@cloudflare/workers-types@4.20260702.1)(@types/node@26.6.2)
+        version: 4.158.0(@cloudflare/workers-types@5.20261110.1)(@types/node@26.6.2)
 
 packages:
 
@@ -246,8 +246,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@cloudflare/workers-types@4.20260702.1':
-    resolution: {integrity: sha512-mOhf5TUEB1m2vPrxtqoIGfz0fUC9xyxRDx5gWHy5s+OCo6dcV+g7wI1R7gYCMFohhqF/2y2xeKVwMwCJjfn/WA==}
+  '@cloudflare/workers-types@5.20261110.1':
+    resolution: {integrity: sha512-XOr3TDQ2sNDiP9zoZtdwYVhuLZ3aFY+G+G4iSeNO9p/HDSveZJpyCbUtmpEElaClLBe9hIzfN26qd0i/S7ksPg==}
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -2015,7 +2015,7 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20261104.1':
     optional: true
 
-  '@cloudflare/workers-types@4.20260702.1': {}
+  '@cloudflare/workers-types@5.20261110.1': {}
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
@@ -2780,9 +2780,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  drizzle-orm@0.39.3(@cloudflare/workers-types@4.20260702.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(postgres@3.4.9):
+  drizzle-orm@0.39.3(@cloudflare/workers-types@5.20261110.1)(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(postgres@3.4.9):
     optionalDependencies:
-      '@cloudflare/workers-types': 4.20260702.1
+      '@cloudflare/workers-types': 5.20261110.1
       '@neondatabase/serverless': 0.10.4
       '@types/pg': 8.11.6
       postgres: 3.4.9
@@ -3435,7 +3435,7 @@ snapshots:
       '@cloudflare/workerd-linux-arm64': 1.20261104.1
       '@cloudflare/workerd-windows-64': 1.20261104.1
 
-  wrangler@4.158.0(@cloudflare/workers-types@4.20260702.1)(@types/node@26.6.2):
+  wrangler@4.158.0(@cloudflare/workers-types@5.20261110.1)(@types/node@26.6.2):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.5.0
       '@cloudflare/unenv-preset': 2.16.2(unenv@2.0.0-rc.24)(workerd@1.20261104.1)
@@ -3447,7 +3447,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       workerd: 1.20261104.1
     optionalDependencies:
-      '@cloudflare/workers-types': 4.20260702.1
+      '@cloudflare/workers-types': 5.20261110.1
       fsevents: 2.3.3
     transitivePeerDependencies:
       - '@types/node'
