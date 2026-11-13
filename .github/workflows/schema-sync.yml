@@ -20,17 +20,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout deste repositório
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Checkout do repositório frontend (main)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: purelifeministriesbrasil/frontend
           ref: main
           path: .other-repo
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
