@@ -54,26 +54,24 @@ crons = ["0 3 * * *"]
 
 # Rate Limiting (janela de 60 s, por IP). Valores INICIAIS de homologação, não limites definitivos.
 # Webhooks de pagamento nunca são limitados. namespace_id é um identificador numérico da conta, único por binding.
-[[unsafe.bindings]]
+# Binding nativo [[ratelimits]] (o antigo [[unsafe.bindings]] era experimental e não aplicava os limites).
+# Limites aproximados e por localidade da Cloudflare: rajadas podem passar um pouco do valor configurado.
+[[ratelimits]]
 name = "RL_CONTACT"
-type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 10, period = 60 }
 
-[[unsafe.bindings]]
+[[ratelimits]]
 name = "RL_TRIAGE"
-type = "ratelimit"
 namespace_id = "1002"
 simple = { limit = 10, period = 60 }
 
-[[unsafe.bindings]]
+[[ratelimits]]
 name = "RL_NEWSLETTER"
-type = "ratelimit"
 namespace_id = "1003"
 simple = { limit = 5, period = 60 }
 
-[[unsafe.bindings]]
+[[ratelimits]]
 name = "RL_DONATION"
-type = "ratelimit"
 namespace_id = "1004"
 simple = { limit = 5, period = 60 }
