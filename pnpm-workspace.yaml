@@ -2,3 +2,11 @@ allowBuilds:
   esbuild: true
   sharp: true
   workerd: true
+
+# Correções de segurança em ferramentas de desenvolvimento (pnpm audit / alertas do Dependabot).
+# Remover quando os pacotes que as trazem já exigirem as versões corrigidas.
+overrides:
+  # GHSA: minimatch >=7 <11.0.1 (trazido por @typescript-eslint/typescript-estree).
+  minimatch: ^11.0.1
+  # esbuild <=0.24.2 (trazido por drizzle-kit → @esbuild-kit, descontinuado).
+  "@esbuild-kit/core-utils>esbuild": ^0.25.0
