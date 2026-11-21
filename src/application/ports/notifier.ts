@@ -4,8 +4,9 @@
  * Conteúdo enviado jamais inclui relato, mensagem ou dados de contato (§5.1, US-5.5).
  */
 export interface Notifier {
-  notifyStaff(subject: string, text: string): Promise<boolean>;
-  sendToRecipient(to: string, subject: string, text: string): Promise<boolean>;
+  /** `html` é opcional: sem ele o adaptador gera a versão com a identidade visual a partir de `text`. */
+  notifyStaff(subject: string, text: string, html?: string): Promise<boolean>;
+  sendToRecipient(to: string, subject: string, text: string, html?: string): Promise<boolean>;
 }
 
 /**

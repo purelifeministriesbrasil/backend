@@ -1,6 +1,7 @@
 import type { NewsletterRepository } from "../ports/newsletter-repository.js";
 import type { Notifier } from "../ports/notifier.js";
 import type { UseCaseResult } from "../ports/result.js";
+import { newsletterConfirmationEmail } from "../emails/templates.js";
 
 export const NEWSLETTER_CONFIRM_TTL_HOURS = 48;
 /** Validade do token de descadastro enviado no e-mail (o envio de edições futuras deve emitir token novo). */
@@ -59,13 +60,18 @@ export async function subscribeNewsletter(
     return { ok: true, value: { confirmationSent: false } };
   }
 
+  const confirmUrl = deps.confirmUrl(token);
+  const email = newsletterConfirmationEmail({
+    siteOrigin: new URL(confirmUrl).origin,
+    confirmUrl,
+    unsubscribeUrl: deps.unsubscribeUrl(unsubscribeToken),
+    ttlHours: NEWSLETTER_CONFIRM_TTL_HOURS,
+  });
   const sent = await deps.notifier.sendToRecipient(
     input.email,
     "Confirme sua inscrição — Pure Life Ministries Brasil",
-    "Recebemos um pedido para inscrever este e-mail na newsletter da Pure Life Ministries Brasil.\n\n" +
-      `Para confirmar, acesse: ${deps.confirmUrl(token)}\n\n` +
-      `O link expira em ${NEWSLETTER_CONFIRM_TTL_HOURS} horas. Se você não fez este pedido, ignore esta mensagem.\n\n` +
-      `Para não receber mais mensagens, acesse: ${deps.unsubscribeUrl(unsubscribeToken)}`
+    email.text,
+    email.html
   );
 
   return { ok: true, value: { confirmationSent: sent } };

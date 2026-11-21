@@ -14,6 +14,12 @@ describe("Hono Router & Security Middleware Integration", () => {
     expect(body.service).toBe("purelife-api");
   });
 
+  it("redirects GET / to the public site instead of a bare 404", async () => {
+    const res = await app.fetch(new Request("https://api.purelifeministriesbrasil.org/"), env);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(env.PUBLIC_SITE_ORIGIN);
+  });
+
   it("handles unmatched route with 404 not_found JSON", async () => {
     const res = await app.fetch(new Request("https://api.purelifeministriesbrasil.org/api/nonexistent"), env);
     expect(res.status).toBe(404);

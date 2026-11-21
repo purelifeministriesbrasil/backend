@@ -2,6 +2,9 @@ import type { Notifier } from "../../application/ports/notifier.js";
 import type { EmailConfig } from "../config/env.js";
 import { fetchWithTimeout } from "../http/fetch.js";
 import { log } from "../observability/logger.js";
+import { noticeEmail } from "../../application/emails/templates.js";
+
+const DEFAULT_SITE_ORIGIN = "https://purelifeministriesbrasil.org";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
@@ -10,7 +13,7 @@ const RESEND_ENDPOINT = "https://api.resend.com/emails";
  * Falha de envio é registrada (sem destinatário nem conteúdo) e devolve `false`.
  */
 export function createResendNotifier(config: EmailConfig, timeoutMs = 5_000): Notifier {
-  async function send(to: string, subject: string, text: string, kind: string): Promise<boolean> {
+  async function send(to: string, subject: string, text: string, html: string, kind: string): Promise<boolean> {
     try {
       const res = await fetchWithTimeout(RESEND_ENDPOINT, {
         method: "POST",
@@ -18,7 +21,7 @@ export function createResendNotifier(config: EmailConfig, timeoutMs = 5_000): No
           Authorization: `Bearer ${config.apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ from: config.from, to: [to], subject, text }),
+        body: JSON.stringify({ from: config.from, to: [to], subject, text, html }),
         timeoutMs,
       });
       if (!res.ok) {
@@ -32,8 +35,12 @@ export function createResendNotifier(config: EmailConfig, timeoutMs = 5_000): No
     }
   }
 
+  const branded = (subject: string, text: string): string =>
+    noticeEmail({ siteOrigin: config.siteOrigin ?? DEFAULT_SITE_ORIGIN, heading: subject, text }).html;
+
   return {
-    notifyStaff: (subject, text) => send(config.staffRecipient, subject, text, "staff"),
-    sendToRecipient: (to, subject, text) => send(to, subject, text, "recipient"),
+    notifyStaff: (subject, text, html) =>
+      send(config.staffRecipient, subject, text, html ?? branded(subject, text), "staff"),
+    sendToRecipient: (to, subject, text, html) => send(to, subject, text, html ?? branded(subject, text), "recipient"),
   };
 }
