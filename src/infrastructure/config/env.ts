@@ -139,6 +139,8 @@ export interface EmailConfig {
   apiKey: string;
   from: string;
   staffRecipient: string;
+  /** Origem pública do site (logotipo e links dos e-mails); padrão: domínio oficial. */
+  siteOrigin?: string;
 }
 
 export function readEmailConfig(env: Env): EmailConfig {
@@ -147,6 +149,7 @@ export function readEmailConfig(env: Env): EmailConfig {
     apiKey: str(env, "RESEND_API_KEY"),
     from: str(env, "EMAIL_FROM"),
     staffRecipient: str(env, "STAFF_NOTIFICATION_EMAIL"),
+    siteOrigin: env.PUBLIC_SITE_ORIGIN !== "" ? env.PUBLIC_SITE_ORIGIN : undefined,
   };
 }
 

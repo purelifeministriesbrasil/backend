@@ -273,6 +273,9 @@ export function createApp(options: AppOptions = {}) {
     });
   });
 
+  // Quem abre a API no navegador cai no site, em vez de ver um 404 cru.
+  app.get("/", (c) => c.redirect(c.env.PUBLIC_SITE_ORIGIN, 302));
+
   app.notFound((c) => c.json({ error: "not_found" }, 404));
 
   app.onError((err) => {
