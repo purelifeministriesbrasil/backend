@@ -36,6 +36,7 @@ import { RATE_LIMIT_RETRY_AFTER_SECONDS, readRateLimitMode, shouldBlock } from "
 import { createDrizzlePurgeRepository } from "./infrastructure/db/purge-repository.js";
 import { createDrizzlePurgeAlertLog } from "./infrastructure/db/purge-alert-log.js";
 import { createResendNotifier } from "./infrastructure/email/resend.js";
+import { createDrizzleRetentionRepository } from "./infrastructure/db/retention-repository.js";
 import { createPaymentGateway } from "./infrastructure/payments/factory.js";
 import { verifyTurnstileToken } from "./infrastructure/security/turnstile.js";
 import { errorCode, log } from "./infrastructure/observability/logger.js";
@@ -315,7 +316,11 @@ export default {
       log("warn", "email.notifications_disabled", { invalidKeys: err.invalidKeys });
     }
     ctx.waitUntil(
-      handleScheduledPurge(purgeRepo, { notifier, alertLog: createDrizzlePurgeAlertLog(handle.db) })
+      handleScheduledPurge(purgeRepo, {
+        notifier,
+        alertLog: createDrizzlePurgeAlertLog(handle.db),
+        retention: createDrizzleRetentionRepository(handle.db),
+      })
         .then(() => undefined)
         .catch((err) => log("error", "cron.purge_failed", { code: errorCode(err) }))
         .finally(() => handle.close())

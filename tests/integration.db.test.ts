@@ -13,6 +13,7 @@ import { createIdempotencyRepository } from "../src/infrastructure/db/idempotenc
 import { createDrizzlePurgeRepository } from "../src/infrastructure/db/purge-repository.js";
 import { handleScheduledPurge } from "../src/presentation/cron/purge.js";
 import { createDrizzlePurgeAlertLog } from "../src/infrastructure/db/purge-alert-log.js";
+import { createDrizzleRetentionRepository } from "../src/infrastructure/db/retention-repository.js";
 import { randomKeyB64 } from "./helpers.js";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -201,6 +202,97 @@ describe.skipIf(!url)("Repositórios Drizzle contra PostgreSQL real", () => {
     expect(contact).toEqual({ status: "purged", message_ciphertext: null });
 
     expect(await handleScheduledPurge(createDrizzlePurgeRepository(handle.db))).toEqual({ triagePurged: 0, contactsPurged: 0 });
+  });
+
+  it("retention: apaga pendentes antigas, anonimiza cancelamentos, limpa auditoria/webhooks e neutraliza o assunto do contato", async () => {
+    const day = 86_400_000;
+    const ago = (days: number) => new Date(Date.now() - days * day);
+    const iso = (d: Date) => d.toISOString();
+
+    // newsletter: 2 pendentes (8 e 2 dias), 2 canceladas (31 e 5 dias), 1 confirmada antiga
+    await handle.db.execute(sql`INSERT INTO newsletter_subscriptions
+      (email_hash, email_cipher, email_iv, key_version, status, created_at, confirm_sent_at, unsubscribed_at, unsubscribe_token_hash, confirm_token_hash) VALUES
+      ('h-pend-old', 'c', 'i', 1, 'pending', ${iso(ago(8))}, ${iso(ago(8))}, NULL, 'ut1', 'ct1'),
+      ('h-pend-new', 'c', 'i', 1, 'pending', ${iso(ago(2))}, ${iso(ago(2))}, NULL, 'ut2', 'ct2'),
+      ('h-unsub-old', 'c', 'i', 1, 'unsubscribed', ${iso(ago(60))}, ${iso(ago(60))}, ${iso(ago(31))}, NULL, NULL),
+      ('h-unsub-new', 'c', 'i', 1, 'unsubscribed', ${iso(ago(60))}, ${iso(ago(60))}, ${iso(ago(5))}, NULL, NULL),
+      ('h-conf-old', 'c', 'i', 1, 'confirmed', ${iso(ago(400))}, ${iso(ago(400))}, NULL, 'ut5', NULL)`);
+
+    // auditoria: uma de 400 dias e uma de 10 dias
+    await handle.db.execute(sql`INSERT INTO audit_events (actor, action, entity_type, created_at) VALUES
+      ('op', 'inbox.list', 'inbox', ${iso(ago(400))}), ('op', 'inbox.list', 'inbox', ${iso(ago(10))})`);
+
+    // webhooks: processado antigo (apaga), falho antigo (mantém), processado recente (mantém)
+    await handle.db.execute(sql`INSERT INTO payment_webhook_events (provider, event_id, event_type, received_at, process_status, signature_ok) VALUES
+      ('asaas', 'e-old-ok', 't', ${iso(ago(400))}, 'processed', true),
+      ('asaas', 'e-old-failed', 't', ${iso(ago(400))}, 'failed', true),
+      ('asaas', 'e-new-ok', 't', ${iso(ago(5))}, 'processed', true)`);
+
+    // contato vencido com assunto potencialmente pessoal
+    await createDrizzleContactRepository(handle.db, enc).createWithConsent({
+      referenceCode: "CTT-RET0-0001",
+      idempotencyKey: crypto.randomUUID(),
+      contact: { subject: "Meu nome é Fulano e preciso de ajuda", contactPlaintext: "{}", messagePlaintext: "msg", retentionUntil: new Date(Date.now() - 1000) },
+      consent,
+    });
+
+    const retention = createDrizzleRetentionRepository(handle.db);
+    const result = await handleScheduledPurge(createDrizzlePurgeRepository(handle.db), { retention });
+    expect(result).toEqual({ triagePurged: 0, contactsPurged: 1, newsletterProcessed: 2, housekeepingDeleted: 2 });
+
+    const news = await handle.db.execute(sql`SELECT email_hash, status, email_cipher, email_iv, key_version, purged_at IS NOT NULL AS purged,
+      confirm_token_hash, unsubscribe_token_hash FROM newsletter_subscriptions ORDER BY email_hash`);
+    expect(news.map((r) => (r as Record<string, unknown>).email_hash)).toEqual(["h-conf-old", "h-pend-new", "h-unsub-new", "h-unsub-old"]);
+    const byHash = Object.fromEntries(news.map((r) => [String((r as Record<string, unknown>).email_hash), r as Record<string, unknown>]));
+    expect(byHash["h-unsub-old"]).toMatchObject({ status: "unsubscribed", email_cipher: null, email_iv: null, key_version: null, purged: true });
+    expect(byHash["h-unsub-new"]).toMatchObject({ email_cipher: "c", purged: false });
+    expect(byHash["h-conf-old"]).toMatchObject({ status: "confirmed", email_cipher: "c", purged: false });
+
+    expect(await handle.db.execute(sql`SELECT 1 FROM audit_events`)).toHaveLength(1);
+    const hooks = await handle.db.execute(sql`SELECT event_id FROM payment_webhook_events ORDER BY event_id`);
+    expect(hooks.map((r) => (r as Record<string, unknown>).event_id)).toEqual(["e-new-ok", "e-old-failed"]);
+
+    const contact = (await handle.db.execute(sql`SELECT subject, status FROM contact_submissions`))[0];
+    expect(contact).toEqual({ subject: "[removido]", status: "purged" });
+
+    // idempotente: segunda execução não encontra mais nada
+    expect(await handleScheduledPurge(createDrizzlePurgeRepository(handle.db), { retention })).toEqual({
+      triagePurged: 0,
+      contactsPurged: 0,
+      newsletterProcessed: 0,
+      housekeepingDeleted: 0,
+    });
+  });
+
+  it("retention: quem se inscreve de novo depois da anonimização volta a ter o e-mail guardado cifrado", async () => {
+    const repo = createDrizzleNewsletterRepository(handle.db, enc, hashEmail);
+    const email = "pessoa@example.org";
+    const now = new Date();
+    const base = {
+      email,
+      policyVersion: "2026-09-19",
+      consentedAt: now,
+      confirmTokenHash: "c1",
+      confirmExpiresAt: new Date(now.getTime() + 48 * 3_600_000),
+      unsubscribeTokenHash: "u1",
+      unsubscribeExpiresAt: new Date(now.getTime() + 180 * 86_400_000),
+      resendCooldownSeconds: 0,
+      now,
+    };
+    expect(await repo.upsertPending(base)).toEqual({ kind: "confirmation_required" });
+    await repo.unsubscribe("u1", now);
+
+    const retention = createDrizzleRetentionRepository(handle.db);
+    const later = new Date(now.getTime() + 40 * 86_400_000);
+    expect(await retention.anonymizeUnsubscribedNewsletter(new Date(later.getTime() - 30 * 86_400_000), later, 10)).toBe(1);
+    const anon = (await handle.db.execute(sql`SELECT email_cipher, purged_at IS NOT NULL AS purged FROM newsletter_subscriptions`))[0];
+    expect(anon).toEqual({ email_cipher: null, purged: true });
+
+    expect(await repo.upsertPending({ ...base, confirmTokenHash: "c2", unsubscribeTokenHash: "u2", now: later })).toEqual({
+      kind: "confirmation_required",
+    });
+    const back = (await handle.db.execute(sql`SELECT status, email_cipher IS NOT NULL AS has_cipher, purged_at IS NULL AS not_purged FROM newsletter_subscriptions`))[0];
+    expect(back).toEqual({ status: "pending", has_cipher: true, not_purged: true });
   });
 
   it("withCreationLock serializes concurrent creations for the same intent and lets different intents run in parallel", async () => {
