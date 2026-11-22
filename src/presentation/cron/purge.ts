@@ -6,13 +6,20 @@ import type { PurgeRepository } from "../../application/usecases/purge-triage.js
 import { createPurgeTriageUseCase } from "../../application/usecases/purge-triage.js";
 import type { ContactPurgeRepository } from "../../application/usecases/purge-contacts.js";
 import { createPurgeContactsUseCase } from "../../application/usecases/purge-contacts.js";
+import { createRetentionUseCases } from "../../application/usecases/apply-retention.js";
+import type { RetentionRepository } from "../../application/ports/retention-repository.js";
 import type { Notifier } from "../../application/ports/notifier.js";
 import type { PurgeAlertLog } from "../../application/ports/purge-alert-log.js";
 import { errorCode, log } from "../../infrastructure/observability/logger.js";
 
-export type PurgeStep = "triage" | "contacts";
+export type PurgeStep = "triage" | "contacts" | "newsletter" | "housekeeping";
 
-const STEP_LABEL: Record<PurgeStep, string> = { triage: "triagem", contacts: "contatos" };
+const STEP_LABEL: Record<PurgeStep, string> = {
+  triage: "triagem",
+  contacts: "contatos",
+  newsletter: "newsletter",
+  housekeeping: "auditoria e registros de pagamento",
+};
 
 export interface PurgeRunOptions {
   /** Registros por lote (padrão 500). */
@@ -25,6 +32,8 @@ export interface PurgeRunOptions {
   alertCooldownMs?: number;
   notifier?: Notifier | null;
   alertLog?: PurgeAlertLog;
+  /** Regras de retenção de newsletter, auditoria e webhooks; sem ela só triagem e contatos são expurgados. */
+  retention?: RetentionRepository;
   now?: () => Date;
   newReference?: () => string;
 }
@@ -32,6 +41,9 @@ export interface PurgeRunOptions {
 export interface PurgeRunResult {
   triagePurged: number;
   contactsPurged: number;
+  /** Só presentes quando `options.retention` foi informado. */
+  newsletterProcessed?: number;
+  housekeepingDeleted?: number;
 }
 
 /** Lançado ao final quando alguma etapa falhou; leva só nomes de etapas e códigos técnicos. */
@@ -68,7 +80,7 @@ export async function handleScheduledPurge(
   const triageUseCase = createPurgeTriageUseCase(repo);
   const contactsUseCase = createPurgeContactsUseCase(repo);
 
-  const counts: Record<PurgeStep, number> = { triage: 0, contacts: 0 };
+  const counts: Record<PurgeStep, number> = { triage: 0, contacts: 0, newsletter: 0, housekeeping: 0 };
   const failures: { step: PurgeStep; code: string }[] = [];
 
   async function drain(step: PurgeStep, runBatch: (limit: number) => Promise<number>): Promise<void> {
@@ -94,7 +106,17 @@ export async function handleScheduledPurge(
   await drain("triage", async (limit) => (await triageUseCase({ limit })).purgedCount);
   await drain("contacts", async (limit) => (await contactsUseCase({ limit })).purgedCount);
 
-  const result: PurgeRunResult = { triagePurged: counts.triage, contactsPurged: counts.contacts };
+  if (options.retention) {
+    const retention = createRetentionUseCases(options.retention);
+    await drain("newsletter", (limit) => retention.newsletter({ now: now(), limit }));
+    await drain("housekeeping", (limit) => retention.housekeeping({ now: now(), limit }));
+  }
+
+  const result: PurgeRunResult = {
+    triagePurged: counts.triage,
+    contactsPurged: counts.contacts,
+    ...(options.retention ? { newsletterProcessed: counts.newsletter, housekeepingDeleted: counts.housekeeping } : {}),
+  };
   log("info", "cron.purge_completed", { ...result, reference, failedSteps: failures.map((f) => f.step) });
 
   if (failures.length > 0) {
@@ -142,7 +164,7 @@ async function alertStaff(
       "Etapas com falha:",
       ...toAlert.map((f) => `- ${STEP_LABEL[f.step]} (código técnico: ${f.code})`),
       "",
-      `Registros expurgados nesta execução: triagem ${result.triagePurged}, contatos ${result.contactsPurged}.`,
+      `Registros tratados nesta execução: triagem ${result.triagePurged}, contatos ${result.contactsPurged}, newsletter ${result.newsletterProcessed ?? 0}, auditoria e pagamentos ${result.housekeepingDeleted ?? 0}.`,
       "A outra etapa foi executada normalmente. O que ficou pendente será retomado na próxima execução diária.",
       `Procure a referência ${reference} nos logs do Worker. Este aviso não contém dados pessoais.`,
     ];

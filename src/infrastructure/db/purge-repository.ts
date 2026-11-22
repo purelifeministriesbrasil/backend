@@ -2,6 +2,7 @@
 import { and, eq, isNull, lt, ne } from "drizzle-orm";
 import type { PurgeRepository } from "../../application/usecases/purge-triage.js";
 import type { ContactPurgeRepository } from "../../application/usecases/purge-contacts.js";
+import { PURGED_CONTACT_SUBJECT } from "../../application/retention-policy.js";
 import type { Database } from "./db.js";
 import { contactSubmissions, triageSubmissions } from "./schema.js";
 
@@ -57,6 +58,7 @@ export function createDrizzlePurgeRepository(
         .set({
           status: "purged",
           referenceCode: null,
+          subject: PURGED_CONTACT_SUBJECT,
           contactCiphertext: null,
           contactIv: null,
           messageCiphertext: null,

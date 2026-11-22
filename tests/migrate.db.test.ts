@@ -53,6 +53,7 @@ describe.skipIf(!url)("scripts/migrate.mjs contra PostgreSQL real", () => {
       "0001_initial.sql",
       "0002_supabase_hardening_and_rls.sql",
       "0003_newsletter_unsubscribe.sql",
+      "0004_retention_newsletter.sql",
     ]);
   });
 

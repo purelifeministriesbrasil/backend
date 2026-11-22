@@ -33,6 +33,7 @@ export function createDrizzleNewsletterRepository(
             id: newsletterSubscriptions.id,
             status: newsletterSubscriptions.status,
             confirmSentAt: newsletterSubscriptions.confirmSentAt,
+            purgedAt: newsletterSubscriptions.purgedAt,
           })
           .from(newsletterSubscriptions)
           .where(eq(newsletterSubscriptions.emailHash, emailHash))
@@ -70,9 +71,18 @@ export function createDrizzleNewsletterRepository(
           : 0;
         if (cooldownEndsAt > now.getTime()) return { kind: "no_action" as const };
 
+        // Linha anonimizada pela retenção (só email_hash): quem se inscreve de novo reabre o consentimento, então o
+        // e-mail volta a ser guardado cifrado, como em uma inscrição nova.
+        const restored = existing.purgedAt
+          ? await enc.encrypt(email, { entityType: "newsletter_subscription", entityId: existing.id, field: "email" })
+          : null;
+
         await tx
           .update(newsletterSubscriptions)
           .set({
+            ...(restored
+              ? { emailCipher: restored.ciphertext, emailIv: restored.iv, keyVersion: restored.keyVersion, purgedAt: null }
+              : {}),
             status: "pending",
             confirmTokenHash,
             confirmExpiresAt,

@@ -225,9 +225,9 @@ export const newsletterSubscriptions = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     emailHash: text("email_hash").notNull().unique("newsletter_subscriptions_email_hash_key"),
-    emailCipher: text("email_cipher").notNull(),
-    emailIv: text("email_iv").notNull(),
-    keyVersion: smallint("key_version").notNull(),
+    emailCipher: text("email_cipher"),
+    emailIv: text("email_iv"),
+    keyVersion: smallint("key_version"),
     status: text("status").notNull().default("pending"),
     confirmTokenHash: text("confirm_token_hash"),
     confirmExpiresAt: timestamp("confirm_expires_at", { withTimezone: true }),
@@ -241,6 +241,7 @@ export const newsletterSubscriptions = pgTable(
     confirmSentAt: timestamp("confirm_sent_at", { withTimezone: true }),
     unsubscribeTokenHash: text("unsubscribe_token_hash"),
     unsubscribeExpiresAt: timestamp("unsubscribe_expires_at", { withTimezone: true }),
+    purgedAt: timestamp("purged_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("news_confirm_token_unq")
@@ -252,6 +253,14 @@ export const newsletterSubscriptions = pgTable(
     check(
       "news_status_chk",
       sql`${table.status} IN ('pending','confirmed','unsubscribed','bounced','suppressed')`
+    ),
+    check(
+      "news_purged_clean",
+      sql`${table.purgedAt} IS NULL OR (${table.status} = 'unsubscribed' AND ${table.emailCipher} IS NULL AND ${table.emailIv} IS NULL AND ${table.keyVersion} IS NULL AND ${table.confirmTokenHash} IS NULL AND ${table.unsubscribeTokenHash} IS NULL)`
+    ),
+    check(
+      "news_cipher_present",
+      sql`${table.purgedAt} IS NOT NULL OR (${table.emailCipher} IS NOT NULL AND ${table.emailIv} IS NOT NULL AND ${table.keyVersion} IS NOT NULL)`
     ),
   ]
 ).enableRLS();
